@@ -40,9 +40,9 @@ exeはこちら：
 ## Author
 ### 制作者のSNSLinkと情報
 
-- X: @younameKaniKani
+- X: [@younameKaniKani](https://x.com/younameKaniKani)
 - Twitter: @younameKaniKani
-- note: そのうち
+- note: [youtime_kanikani](https://note.com/youtime_kanikani)
 
 ### 自己紹介
 時空と体験を工学的に再解釈し新しい体験を作り出す、メタ時間工学（造語）の研究者。を自称するただの高専生です。
