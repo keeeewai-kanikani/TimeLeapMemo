@@ -34,12 +34,12 @@ exeはこちら：
 - HCI的検証
 
 ## Author
-制作者のSNSLinkと情報
+### 制作者のSNSLinkと情報
 
-X: @younameKaniKani
-Twitter: @younameKaniKani
-note: そのうち
+- X: @younameKaniKani
+- Twitter: @younameKaniKani
+- note: そのうち
 
-自己紹介
+### 自己紹介
 時空と体験を工学的に再解釈し新しい体験を作り出す、メタ時間工学（造語）の研究者。を自称するただの高専生です。
 普段は格闘ゲームや音楽、料理を作ったりしています。
