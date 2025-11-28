@@ -4,9 +4,9 @@
 
 ## Download
 exeはこちら：
-- Releases ページからダウンロード
+- Releases ページからダウンロード(win10/win11)
 
-※手書きなのでPC版はペンタブ推奨
+※手書きなのでペンタブ推奨
 
 ## What is this?
 - メモが時間順に再構成される
