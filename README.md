@@ -14,7 +14,7 @@ exeはこちら：
 - 思考を「線」ではなく「層」として扱うUI
 - ページ移動の概念がなく、連続的に移り変わっていくため、無限に書くことが出来ます。
 
-- <img width="1590" height="1023" alt="スクリーンショット_タイムリープメモ_1 2025-11-28 194113" src="https://github.com/user-attachments/assets/13d0c75c-c116-4559-bd97-e4988e6a4a79" />
+<img width="1590" height="1023" alt="スクリーンショット_タイムリープメモ_1 2025-11-28 194113" src="https://github.com/user-attachments/assets/13d0c75c-c116-4559-bd97-e4988e6a4a79" />
 
 
 ## なぜタイムリープ？
