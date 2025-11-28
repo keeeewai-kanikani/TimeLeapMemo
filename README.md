@@ -16,6 +16,7 @@ exeはこちら：
 
 <img width="1590" height="1023" alt="スクリーンショット_タイムリープメモ_1 2025-11-28 194113" src="https://github.com/user-attachments/assets/13d0c75c-c116-4559-bd97-e4988e6a4a79" />
 
+<img width="1589" height="1023" alt="スクリーンショット_タイムリープメモ_2 2025-11-28 194113" src="https://github.com/user-attachments/assets/abaca9ce-a8cd-490d-ac63-27a24946831d" />
 
 ## なぜタイムリープ？
 - 時間軸を戻してその時の自分の思考プロセスを可視化し、それを客観視する体験を、過去に戻る“タイムリープ”と解釈している。
