@@ -4,15 +4,19 @@
 
 ## Download
 exeはこちら：
-- Releases ページからダウンロード
+- Releases ページからダウンロード(win10/win11)
 
-※手書きなのでPC版はペンタブ推奨
+※手書きなのでペンタブ推奨
 
 ## What is this?
 - メモが時間順に再構成される
 - 過去の記録が“再生”される感覚
 - 思考を「線」ではなく「層」として扱うUI
 - ページ移動の概念がなく、連続的に移り変わっていくため、無限に書くことが出来ます。
+
+<img width="1590" height="1023" alt="スクリーンショット_タイムリープメモ_1 2025-11-28 194113" src="https://github.com/user-attachments/assets/13d0c75c-c116-4559-bd97-e4988e6a4a79" />
+
+<img width="1589" height="1023" alt="スクリーンショット_タイムリープメモ_2 2025-11-28 194113" src="https://github.com/user-attachments/assets/abaca9ce-a8cd-490d-ac63-27a24946831d" />
 
 ## なぜタイムリープ？
 - 時間軸を戻してその時の自分の思考プロセスを可視化し、それを客観視する体験を、過去に戻る“タイムリープ”と解釈している。
@@ -36,10 +40,15 @@ exeはこちら：
 ## Author
 ### 制作者のSNSLinkと情報
 
-- X: @younameKaniKani
+- X: [@younameKaniKani](https://x.com/younameKaniKani)
 - Twitter: @younameKaniKani
-- note: そのうち
+- note: [youtime_kanikani](https://note.com/youtime_kanikani)
 
 ### 自己紹介
 時空と体験を工学的に再解釈し新しい体験を作り出す、メタ時間工学（造語）の研究者。を自称するただの高専生です。
 普段は格闘ゲームや音楽、料理を作ったりしています。
+
+## ライセンス
+- 商用利用は禁止(相談は連絡してください)
+- 改変、私的使用は可能
+- 改変したものなどの再配布の際も一言連絡をください
