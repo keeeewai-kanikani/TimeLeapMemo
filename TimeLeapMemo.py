@@ -8,12 +8,13 @@ from typing import List, Tuple
 import numpy as np
 import json
 import os
+from datetime import datetime
 
 from PyQt6.QtCore import Qt, QPointF, QTimer
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QSlider, QLabel, QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QFileDialog, QStackedLayout
 )
-from PyQt6.QtGui import QSurfaceFormat, QPainter, QPen, QColor, QPainterPath
+from PyQt6.QtGui import QSurfaceFormat, QPainter, QPen, QColor, QPainterPath, QIcon
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 import moderngl
 
@@ -55,6 +56,7 @@ class Stroke:
     time_created: float
     base_alpha: float = 1.0  # dynamic alpha for forgetting
     is_visible: bool = True  # optimization flag
+    _cached_path: QPainterPath = None
 
     def bbox(self):
         xs = [p[0] for p in self.points]
@@ -73,12 +75,13 @@ class GLCanvas(QOpenGLWidget):
         self.density_w = density_w
         self.density_h = density_h
 
-        # homeostasis parameters
-        self.target_density = 0.05  # 目標密度を下げる
-        self.hysteresis = 0.02      # より敏感に反応
-        self.lambda_base = 0.1     # 基本消滅速度を上げる
-        self.lambda_k = 3.0         # 密度による影響を強く
+        # homeostasis parameters (現在無効化: 頂点数制限に移行)
+        # self.target_density = 0.05
+        # self.hysteresis = 0.02
+        self.lambda_base = 0.2 # 薄くなる減衰率
+        # self.lambda_k = 3.0
         self.lambdas_factor = 1.0
+        self.max_display_points = 4000  # 描画をスムーズに保つための最大合計頂点数
 
         # moderngl objects
         self.ctx: moderngl.Context = None
@@ -154,7 +157,10 @@ class GLCanvas(QOpenGLWidget):
             # 最大virtual_timeを更新
             if self.virtual_time > self.max_virtual_time:
                 self.max_virtual_time = self.virtual_time
-            self.timer.stop() 
+            self.timer.stop()
+            # タイムラインを再計算させる
+            if hasattr(self, 'request_timeline_refresh'):
+                self.request_timeline_refresh()
 
     def render_density_map(self):
         self.fbo.use()
@@ -217,59 +223,67 @@ class GLCanvas(QOpenGLWidget):
 
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(255, 255, 255))
-        painter.end()
-        density = self.render_density_map()
-        global_density = float(np.mean(density)) if density is not None else 0.0
-        error = global_density - self.target_density
-        gain = 0.0 if abs(error) < self.hysteresis else error
-        self.lambdas_factor = 1.0 + self.lambda_k * gain
-        self.lambdas_factor = max(0.1, min(4.0, self.lambdas_factor))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # 密度マップ計算をコメントアウト
+        self.lambdas_factor = 1.0 # 固定の消滅ベクトル
 
         now = self.virtual_time
-        for s in self.strokes:
-            # 最適化: 完全に消えた(is_visible=False)ものは計算しない
-            if not s.is_visible:
+        
+        # 頂点数による表示制限の計算 (新しいものから順にカウント)
+        total_points = 0
+        lam = self.lambda_base * self.lambdas_factor
+        
+        # ストロークを新しい順にチェックして表示可能か判断
+        for s in reversed(self.strokes):
+            # 未来のものはスキップ
+            if s.time_created > now:
+                s.is_visible = False
                 continue
-
+            
+            # 時間による消滅計算
             age = now - s.time_created
-            if age < 0:
-                s.base_alpha = 0.0
-                continue
-
-            lam = self.lambda_base * self.lambdas_factor
             s.base_alpha = math.exp(-lam * age)
             
-            # 閾値を下回ったら不可視フラグを立てて計算除外
-            if s.base_alpha < 0.001:
-                s.base_alpha = 0.0
+            # 完全に消えているか、頂点数制限を超えた場合は非表示
+            if s.base_alpha < 0.01 or total_points > self.max_display_points:
                 s.is_visible = False
-        
+            else:
+                s.is_visible = True
+                total_points += len(s.points)
+
         self.last_virtual_time = now
 
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         pen = QPen(QColor(0, 0, 0))
+        
+        # 表示対象のみ描画
         for idx, s in enumerate(self.strokes):
-            if s.base_alpha < 0.01:
+            if not s.is_visible:
                 continue
-            path = QPainterPath()
-            pts = s.points
-            path.moveTo(QPointF(pts[0][0], pts[0][1]))
-            for i in range(1, len(pts) - 1):
-                x1, y1, _ = pts[i]
-                x2, y2, _ = pts[i + 1]
-                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-                path.quadTo(QPointF(x1, y1), QPointF(cx, cy))
+            
+            if s._cached_path is None:
+                path = QPainterPath()
+                pts = s.points
+                path.moveTo(QPointF(pts[0][0], pts[0][1]))
+                for i in range(1, len(pts) - 1):
+                    x1, y1, _ = pts[i]
+                    x2, y2, _ = pts[i + 1]
+                    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+                    path.quadTo(QPointF(x1, y1), QPointF(cx, cy))
+                s._cached_path = path
+            
             pen.setWidthF(s.width)
-            # 段ハイライト中はより目立つ青色
+            # 段ハイライト中
             if idx in self.highlight_stroke_indices:
                 c = QColor(0, 180, 255)
             else:
                 c = QColor(0, 0, 0)
-            c.setAlpha(int(255 * np.clip(s.base_alpha, 0.0, 1.0)))
+            
+            alpha_val = max(0.0, min(1.0, s.base_alpha))
+            c.setAlpha(int(255 * alpha_val))
             pen.setColor(c)
             painter.setPen(pen)
-            painter.drawPath(path)
+            painter.drawPath(s._cached_path)
 
         if self.current_points:
             path = QPainterPath()
@@ -280,6 +294,7 @@ class GLCanvas(QOpenGLWidget):
                 cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
                 path.quadTo(QPointF(x1, y1), QPointF(cx, cy))
             pen.setWidthF(6.0)
+            pen.setColor(QColor(0, 0, 0))
             painter.setPen(pen)
             painter.drawPath(path)
         painter.end()
@@ -347,8 +362,9 @@ class TimelineWidget(QWidget):
         self.chaos_pad_mode = False  # スペースキー押下中かどうか
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # フォーカスを受け取るためにポリシーを設定
 
-        self.line_height = 12 
-
+        self.line_height = 36 #世界線太さ
+        self.density_data = []  # (time, count) list for graph
+        self.max_display_points = 5000  # Default threshold
     def set_stroke_times(self, times, timeline_max, current_time=None):
         self.stroke_times = times
         self.timeline_max = timeline_max
@@ -356,6 +372,28 @@ class TimelineWidget(QWidget):
             self.current_time = current_time
         self.calc_segments()
         self.update()
+
+    def update_density_graph(self, strokes, timeline_max, lambda_base, max_display_points):
+        # 頂点数の推移を計算（200地点サンプリング）
+        self.max_display_points = max_display_points
+        self.density_data = []
+        if not strokes or timeline_max <= 0:
+            return
+        
+        samples = 200
+        for i in range(samples + 1):
+            t = (i / samples) * timeline_max
+            total_points = 0
+            # GLCanvasの描画ロジックをシミュレート
+            for s in reversed(strokes):
+                if s.time_created > t:
+                    continue
+                age = t - s.time_created
+                base_alpha = math.exp(-lambda_base * age)
+                if base_alpha < 0.01 or total_points > max_display_points:
+                    continue
+                total_points += len(s.points)
+            self.density_data.append((t, total_points))
 
     def calc_segments(self):
         # 段ごとのストロークインデックスリストとy座標リストを作成
@@ -371,7 +409,7 @@ class TimelineWidget(QWidget):
             if t < prev_time:
                 self.segment_indices.append(indices)
                 self.segment_ys.append(y)
-                y += self.line_height + 2
+                y += self.line_height + 4
                 indices = [i]
             else:
                 indices.append(i)
@@ -404,7 +442,7 @@ class TimelineWidget(QWidget):
             self.update()
 
     def handle_chaos_pad(self, event):
-        # Bキーを押している間だけx/yで操作
+        # Bキーを押している間だけ操作
         w = self.width()
         x = event.position().x() if hasattr(event, 'position') else event.x()
         y = event.position().y() if hasattr(event, 'position') else event.y()
@@ -413,20 +451,21 @@ class TimelineWidget(QWidget):
         parent_canvas = self.parent().parent().parent().canvas
         parent_canvas.virtual_time = t
         self.current_time = t  # 赤いバーも動かす
-        # MainWindowのupdate_timeline_sliderとupdate_timeline_historyを呼び出す
+        
+        # MainWindowのUI更新（重い処理は避ける）
         if hasattr(parent_canvas, 'parent'):
             mainwin = self.parent().parent().parent()
             if hasattr(mainwin, 'update_timeline_slider'):
                 mainwin.update_timeline_slider(t)
-            if hasattr(mainwin, 'update_timeline_history'):
-                mainwin.update_timeline_history()
+            # update_timeline_history (旧名) は重いので毎フレーム呼ばない
+        
         parent_canvas.update()  # キャンバス描画を必ず更新
         # 世界線選択（y座標）
         self.update_highlight_by_y(y)
 
     def update_highlight_by_y(self, y):
         for seg_idx, seg_y in enumerate(self.segment_ys):
-            if abs(y - (seg_y + self.line_height // 2)) < self.line_height:
+            if abs(y - (seg_y + self.line_height // 2)) < self.line_height // 2:
                 if self.highlight_callback:
                     self.highlight_callback(self.segment_indices[seg_idx])
                 self.highlight_segment = seg_idx
@@ -455,6 +494,47 @@ class TimelineWidget(QWidget):
         w = self.width()
         h = self.height()
         painter.fillRect(self.rect(), QColor(255, 255, 255))
+
+        # 頂点数グラフの描画
+        if self.density_data:
+            # 描画制限（max_display_points）が中央（高さ半分）に来るようにスケール設定
+            graph_scale_max = self.max_display_points * 2
+            
+            painter.setOpacity(0.2)
+            graph_path = QPainterPath()
+            first = True
+            for t, count in self.density_data:
+                px = (t / self.timeline_max * w) if self.timeline_max > 0 else 0
+                py = h - (count / graph_scale_max * h)
+                # グラフが上端を突き抜けないようにクリップ
+                py = max(0, py)
+                if first:
+                    graph_path.moveTo(px, py)
+                    first = False
+                else:
+                    graph_path.lineTo(px, py)
+            
+            # グラフの下を塗りつぶし
+            fill_path = QPainterPath(graph_path)
+            fill_path.lineTo(w, h)
+            fill_path.lineTo(0, h)
+            fill_path.closeSubpath()
+            painter.fillPath(fill_path, QColor(0, 120, 255))
+            
+            # 折れ線自体を描画
+            painter.setOpacity(0.4)
+            pen_graph = QPen(QColor(0, 80, 200), 1)
+            painter.setPen(pen_graph)
+            painter.drawPath(graph_path)
+
+            # 閾値（描画制限）を表す緑色の線を描画
+            painter.setOpacity(0.6)
+            pen_threshold = QPen(QColor(0, 255, 0), 2)
+            painter.setPen(pen_threshold)
+            painter.drawLine(0, h // 2, w, h // 2)
+            
+            painter.setOpacity(0.5)
+
         # 世界線（段）ごとに描画
         for seg_idx, indices in enumerate(self.segment_indices):
             y = self.segment_ys[seg_idx]
@@ -489,6 +569,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Homeostatic Forget Drawing")
         self.resize(1600, 1000)
+
+        # アイコンの設定
+        icon_path = os.path.join(os.path.dirname(__file__), "Icon", "タイムリープメモ_アイコン.svg")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         
         self.timeline_max = 300.0  # 仮想時刻の最大値（秒）
         self.chaos_pad_mode = False
@@ -546,6 +631,7 @@ class MainWindow(QMainWindow):
 
         self.canvas.timeline_update_callback = self.update_timeline_slider
         self.timeline_widget.highlight_callback = self.canvas.set_highlight_stroke
+        self.canvas.request_timeline_refresh = self.refresh_timeline_data
 
         # 設定ファイルをAppDataに保存
         # AppData\Local\TimeLeapMemo\config.json
@@ -582,8 +668,11 @@ class MainWindow(QMainWindow):
     def get_stroke_times(self):
         return [s.time_created for s in self.canvas.strokes]
 
-    def update_timeline_history(self):
+    def refresh_timeline_data(self):
         self.timeline_widget.set_stroke_times(self.get_stroke_times(), self.timeline_max, self.canvas.virtual_time)
+        self.timeline_widget.update_density_graph(
+            self.canvas.strokes, self.timeline_max, self.canvas.lambda_base, self.canvas.max_display_points
+        )
 
     def update_timeline_slider(self, t):
         slider_val = int(t / self.timeline_max * 100)
@@ -591,13 +680,16 @@ class MainWindow(QMainWindow):
         self.timeline_slider.setValue(slider_val)
         self.timeline_slider.blockSignals(False)
         self.label.setText(f"Time: {t:.2f}")
+        self.timeline_widget.current_time = t
+        self.timeline_widget.update()
 
     def on_timeline_slider(self, v):
         t = v / 100.0 * self.timeline_max
         self.canvas.virtual_time = t
         self.label.setText(f"Time: {t:.2f}")
+        self.timeline_widget.current_time = t # 赤いバーを更新
+        self.timeline_widget.update()
         self.canvas.update()
-        self.update_timeline_history()
 
     def on_play_clicked(self, checked):
         if checked:
@@ -636,6 +728,7 @@ class MainWindow(QMainWindow):
             return
         if e.key() == Qt.Key.Key_C:
             self.canvas.clear_all()
+            self.refresh_timeline_data()
         elif e.key() == Qt.Key.Key_N:
             self.go_to_now()
         elif e.key() == Qt.Key.Key_B:
@@ -659,14 +752,16 @@ class MainWindow(QMainWindow):
         self.play_button.setText("▶")
 
     def export_strokes(self):
-        path, _ = QFileDialog.getSaveFileName(self, "エクスポート", os.path.join(self.last_folder, "strokes.json"), "JSON Files (*.json)")
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H%M%S")
+        default_name = f"{timestamp}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "エクスポート", os.path.join(self.last_folder, default_name), "JSON Files (*.json)")
         if path:
             folder = os.path.dirname(path)
             self.save_last_folder(folder)
             json_str = self.canvas.export_strokes_json()
             with open(path, "w", encoding="utf-8") as f:
                 f.write(json_str)
-            self.update_timeline_history()
+            self.refresh_timeline_data()
 
     def import_strokes(self):
         path, _ = QFileDialog.getOpenFileName(self, "インポート", self.last_folder, "JSON Files (*.json)")
@@ -683,7 +778,7 @@ class MainWindow(QMainWindow):
             self.timeline_slider.setValue(slider_val)
             self.timeline_slider.blockSignals(False)
             self.label.setText(f"Time: {t:.2f}")
-            self.update_timeline_history()
+            self.refresh_timeline_data()
 
     def go_to_now(self):
         t = self.canvas.max_virtual_time
@@ -694,7 +789,7 @@ class MainWindow(QMainWindow):
         self.timeline_slider.blockSignals(False)
         self.label.setText(f"Time: {t:.2f}")
         self.canvas.update()
-        self.update_timeline_history()
+        self.refresh_timeline_data()
 
     def timeline_slider_enter(self, event):
         self.timeline_widget.show()
@@ -705,6 +800,12 @@ class MainWindow(QMainWindow):
 
 # ---- Run ----
 if __name__ == "__main__":
+    # Windowsのタスクバーでアイコンを正しく表示するための設定
+    if sys.platform == 'win32':
+        import ctypes
+        myappid = 'keeeewai-kanikani.timeleapmemo.v1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
     app = QApplication(sys.argv)
     fmt = QSurfaceFormat()
     fmt.setDepthBufferSize(24)
