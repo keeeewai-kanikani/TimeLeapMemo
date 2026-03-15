@@ -1,3 +1,0 @@
-cargo:rustc-check-cfg=cfg(slint_debug_property)
-cargo:rerun-if-changed=widgets
-cargo:rustc-env=SLINT_WIDGETS_LIBRARY=C:\Users\yutaa\OneDrive\ドキュメント\四則和算\タイムリープメモ\timeleap-memo-rs\target\debug\build\i-slint-compiler-5792e2071d3038e9\out\included_library.rs
