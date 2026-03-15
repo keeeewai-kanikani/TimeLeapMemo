@@ -1,0 +1,12 @@
+[package]
+name = "timeleap-memo-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bincode = "3.0.0"
+chrono = "0.4.44"
+num-traits = "0.2.19"
+petgraph = "0.8.3"
+serde = { version = "1.0.228", features = ["derive"] }
+slint = "1.15.1"

@@ -1,0 +1,56 @@
+export component MainWindow inherits Window {
+    title: "TimeLeap Memo (Rust)";
+    width: 800px;
+    height: 600px;
+    background: #ffffff;
+
+    callback pointer-move(point);
+    callback pointer-down(point);
+    callback pointer-up();
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 10px;
+        
+        // Drawing Area
+        Rectangle {
+            background: #f0f0f0;
+            border-radius: 4px;
+            
+            touch-area := TouchArea {
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.pointer-down({ x: self.mouse-x, y: self.mouse-y });
+                    } else if (event.kind == PointerEventKind.move) {
+                        root.pointer-move({ x: self.mouse-x, y: self.mouse-y });
+                    } else if (event.kind == PointerEventKind.up) {
+                        root.pointer-up();
+                    }
+                }
+            }
+        }
+
+        // Bottom Controls (Placeholder)
+        HorizontalLayout {
+            height: 40px;
+            spacing: 20px;
+            alignment: center;
+            
+            Text {
+                text: "Virtual Time: 0.00";
+                vertical-alignment: center;
+            }
+            
+            Button := Rectangle {
+                width: 60px;
+                height: 30px;
+                background: #0078d4;
+                border-radius: 4px;
+                Text {
+                    text: "NOW";
+                    color: white;
+                }
+            }
+        }
+    }
+}
