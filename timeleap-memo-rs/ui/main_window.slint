@@ -14,6 +14,7 @@ struct SegmentData {
     id: int,
     y: float,
     highlighted: bool,
+    waveform-data: string,
 }
 
 export component FractalTimeline inherits Rectangle {
@@ -88,7 +89,7 @@ export component FractalTimeline inherits Rectangle {
                 if (self.is-pressed && (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move)) {
                     let ratio = Math.max(0.0, Math.min(self.mouse-x / self.width, 1.0));
                     let new-vt = root.micro-start + (ratio * root.micro-window-size);
-                    root.time-changed(Math.max(0.0, Math.min(new-vt, root.timeline-max)));
+                    root.time-changed(Math.max(0.0, Math.min(new-vt, State.vt-max)));
                 }
             }
         }
@@ -157,13 +158,16 @@ export global State {
 
     in-out property <float> macro-ratio: 0.0;
     in-out property <float> middle-ratio: 0.0;
+    in-out property <bool> fullscreen: false;
 }
 
 export component MainWindow inherits Window {
     title: "TimeLeap Memo (Rust)";
+    icon: @image-url("../../Icon/タイムリープメモ_アイコン.svg");
     width: 1000px;
     height: 700px;
     background: #ffffff;
+    full-screen: State.fullscreen;
     forward-focus: key-handler;
 
     init => { key-handler.focus(); }
@@ -186,10 +190,20 @@ export component MainWindow inherits Window {
 
     key-handler := FocusScope {
         key-pressed(event) => {
-            if (event.text == "e" || event.text == "E") { State.eraser = !State.eraser; return accept; }
-            if (event.text == "n" || event.text == "N") { root.gonow(); return accept; }
+            if (event.text == "e" || event.text == "E" || event.text == "1") { State.eraser = !State.eraser; return accept; }
+            if (event.text == "n" || event.text == "N" || event.text == "3") { root.gonow(); return accept; }
             if (event.text == "b" || event.text == "B") { State.scrubbing = true; return accept; }
             if (event.text == " ") { State.chaos-pad-mode = true; root.enter-chaos-pad(); return accept; }
+            if (event.text == "2") {
+                State.chaos-pad-mode = !State.chaos-pad-mode;
+                if (State.chaos-pad-mode) { root.enter-chaos-pad(); }
+                else { root.exit-chaos-pad(); }
+                return accept;
+            }
+            if (event.text == "f" || event.text == "F" || event.text == "F11") {
+                State.fullscreen = !State.fullscreen;
+                return accept;
+            }
             return reject;
         }
         key-released(event) => {
@@ -231,11 +245,27 @@ export component MainWindow inherits Window {
             if State.chaos-pad-mode: Rectangle {
                 width: 100%; height: 100%; background: #2196f333;
                 VerticalLayout {
+                    padding: 0; spacing: 0;
                     width: 100%; height: 100%;
                     for seg in root.timeline-segments: Rectangle {
                         background: seg.highlighted ? #ff00ff21 : #ffffff28;
                         Text { text: "Worldline ID: \{seg.id}"; color: #fff; font-size: 12px; x: 10px; y: 10px; }
+                        
+                        Path {
+                            width: 100%; height: 100%;
+                            viewbox-width: 100; viewbox-height: 100;
+                            commands: seg.waveform-data;
+                            fill: seg.highlighted ? #ff00ff44 : #2196f344;
+                        }
                     }
+                }
+                // Playhead (現在の時間位置を示す縦線)
+                Rectangle {
+                    x: (State.vt / Math.max(0.01, State.vt-max)) * parent.width - 1px;
+                    y: 0;
+                    width: 2px;
+                    height: 100%;
+                    background: #ff0000;
                 }
             }
 
@@ -249,9 +279,9 @@ export component MainWindow inherits Window {
                 pointer-event(event) => {
                     if (State.chaos-pad-mode) {
                         if (event.kind == PointerEventKind.move || event.kind == PointerEventKind.down) {
-                            let ratio = self.mouse-x / self.width;
-                            // 詳細窓の開始位置を基準にシーク（ID参照なしでもOK）
-                            root.time-changed(root.micro-start + ratio * root.micro-scale);
+                            let ratio = Math.max(0.0, Math.min(self.mouse-x / self.width, 1.0));
+                            // 波形に合わせて全タイムライン（0〜vt-max）をシーク
+                            root.time-changed(ratio * State.vt-max);
                             let ratio-y = self.mouse-y / self.height;
                             root.worldline-changed(ratio-y);
                         }
@@ -277,15 +307,17 @@ export component MainWindow inherits Window {
             micro-start: root.micro-start;
 
             macro-ratio-changed(r) => {
+                let snap-r = r > 0.98 ? 1.0 : r;
                 let vt-ratio = (State.vt - root.micro-start) / root.micro-scale;
-                State.macro-ratio = r;
+                State.macro-ratio = snap-r;
                 // 更新された micro-start に合わせて VT も追従
-                root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), root.effective-max)));
+                root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), State.vt-max)));
             }
             middle-ratio-changed(r) => {
+                let snap-r = r > 0.98 ? 1.0 : r;
                 let vt-ratio = (State.vt - root.micro-start) / root.micro-scale;
-                State.middle-ratio = r;
-                root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), root.effective-max)));
+                State.middle-ratio = snap-r;
+                root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), State.vt-max)));
             }
             time-changed(t) => { root.time-changed(t); }
         }

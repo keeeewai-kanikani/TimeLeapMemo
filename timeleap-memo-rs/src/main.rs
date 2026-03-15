@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 slint::include_modules!();
 
 mod logic;
@@ -27,14 +28,58 @@ fn stroke_to_svg(stroke: &Stroke, width: f32, height: f32) -> SharedString {
 fn update_ui_segments(
     ui: &MainWindow,
     wlm: &WorldLineManager,
+    strokes: &[Stroke],
+    vt_max: f32,
     active_id: usize,
 ) {
     let mut ui_segments: Vec<SegmentData> = Vec::new();
+    let samples = 100;
+    let lambda = 0.13;
+
     for segment in &wlm.segments {
+        let mut waveform = String::new();
+        if vt_max > 0.0 && !segment.stroke_indices.is_empty() {
+            let mut densities = Vec::with_capacity(samples);
+            let mut max_d = 0.1f32;
+
+            for i in 0..samples {
+                let t = (i as f32 / (samples - 1) as f32) * vt_max;
+                let mut d = 0.0;
+                for &idx in &segment.stroke_indices {
+                    let s = &strokes[idx];
+                    if s.virtual_time_created <= t {
+                        let age = t - s.virtual_time_created;
+                        let alpha = (-lambda * age).exp();
+                        if alpha > 0.01 {
+                            d += (s.points.len() as f32) * alpha;
+                        }
+                    }
+                }
+                densities.push(d);
+                if d > max_d { max_d = d; }
+            }
+            // 垂直方向にいっぱいに広がるように正規化
+            if max_d < 1.0 { max_d = 1.0; }
+
+            waveform.push_str("M 0 50");
+            for (i, &d) in densities.iter().enumerate() {
+                let x = (i as f32 / (samples - 1) as f32) * 100.0;
+                let y = 50.0 - (d / max_d) * 45.0;
+                waveform.push_str(&format!(" L {:.1} {:.1}", x, y));
+            }
+            for (i, &d) in densities.iter().enumerate().rev() {
+                let x = (i as f32 / (samples - 1) as f32) * 100.0;
+                let y = 50.0 + (d / max_d) * 45.0;
+                waveform.push_str(&format!(" L {:.1} {:.1}", x, y));
+            }
+            waveform.push_str(" Z");
+        }
+
         ui_segments.push(SegmentData {
             id: segment.id as i32,
             y: 0.0,
             highlighted: segment.id == active_id,
+            waveform_data: SharedString::from(waveform),
         });
     }
     let segments_model = Rc::new(VecModel::from(ui_segments));
@@ -220,13 +265,17 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.on_enter_chaos_pad({
         let ui_handle = ui.as_weak();
         let world_line_manager = world_line_manager.clone();
+        let strokes = strokes.clone();
+        let virtual_time = virtual_time.clone();
         let active_segment_id = active_segment_id.clone();
         
         move || {
             if let Some(ui) = ui_handle.upgrade() {
                 let wlm = world_line_manager.borrow();
+                let s_list = strokes.borrow();
+                let vt_max = virtual_time.borrow().get_max();
                 let active_id = *active_segment_id.borrow();
-                update_ui_segments(&ui, &wlm, active_id);
+                update_ui_segments(&ui, &wlm, &s_list, vt_max, active_id);
             }
         }
     });
@@ -234,6 +283,8 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.on_worldline_changed({
         let ui_handle = ui.as_weak();
         let world_line_manager = world_line_manager.clone();
+        let strokes = strokes.clone();
+        let virtual_time = virtual_time.clone();
         let active_segment_id = active_segment_id.clone();
         let highlighted_strokes = highlighted_strokes.clone();
 
@@ -253,7 +304,9 @@ fn main() -> Result<(), slint::PlatformError> {
                     *active_segment_id.borrow_mut() = new_id;
 
                     if let Some(ui) = ui_handle.upgrade() {
-                        update_ui_segments(&ui, &wlm, new_id);
+                        let s_list = strokes.borrow();
+                        let vt_max = virtual_time.borrow().get_max();
+                        update_ui_segments(&ui, &wlm, &s_list, vt_max, new_id);
                         
                         let mut highlighted = highlighted_strokes.borrow_mut();
                         highlighted.clear();
@@ -321,6 +374,9 @@ fn main() -> Result<(), slint::PlatformError> {
             let current_stroke = current_stroke.clone();
             let virtual_time = virtual_time.clone();
             let highlighted_strokes = highlighted_strokes.clone();
+            let world_line_manager = world_line_manager.clone();
+            let active_segment_id = active_segment_id.clone();
+            let mut waveform_update_counter = 0;
 
             move || {
                 if let Some(ui) = ui_handle.upgrade() {
@@ -373,6 +429,21 @@ fn main() -> Result<(), slint::PlatformError> {
                             width: stroke.width,
                             opacity: 1.0,
                         });
+                    }
+
+                    if is_chaos_mode {
+                        waveform_update_counter += 1;
+                        // 約300msごとに波形を再計算（vt_maxの増大やフェードに対応するため）
+                        if waveform_update_counter >= 20 {
+                            waveform_update_counter = 0;
+                            let wlm = world_line_manager.borrow();
+                            let s_list = strokes.borrow();
+                            let active_id = *active_segment_id.borrow();
+                            let vt_max = vt.get_max();
+                            update_ui_segments(&ui, &wlm, &s_list, vt_max, active_id);
+                        }
+                    } else {
+                        waveform_update_counter = 0;
                     }
 
                     let model = Rc::new(VecModel::from(render_data));
