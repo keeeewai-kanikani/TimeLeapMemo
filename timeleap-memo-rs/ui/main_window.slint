@@ -7,6 +7,11 @@ export component MainWindow inherits Window {
     callback pointer-move(point);
     callback pointer-down(point);
     callback pointer-up();
+    callback toggle-play();
+    callback go-to-now();
+
+    in-out property <float> virtual-time: 0.0;
+    in-out property <bool> is-playing: false;
 
     VerticalLayout {
         padding: 10px;
@@ -30,18 +35,33 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Bottom Controls (Placeholder)
+        // Bottom Controls
         HorizontalLayout {
             height: 40px;
             spacing: 20px;
             alignment: center;
             
             Text {
-                text: "Virtual Time: 0.00";
+                text: "Virtual Time: \{Math.round(root.virtual-time * 100) / 100}";
                 vertical-alignment: center;
             }
+
+            PlayButton := Rectangle {
+                width: 40px;
+                height: 30px;
+                background: root.is-playing ? #d40000 : #00d478;
+                border-radius: 4px;
+                Text {
+                    text: root.is-playing ? "PAUSE" : "PLAY";
+                    color: white;
+                    font-size: 10px;
+                }
+                TouchArea {
+                    clicked => { root.toggle-play() }
+                }
+            }
             
-            Button := Rectangle {
+            NowButton := Rectangle {
                 width: 60px;
                 height: 30px;
                 background: #0078d4;
@@ -49,6 +69,9 @@ export component MainWindow inherits Window {
                 Text {
                     text: "NOW";
                     color: white;
+                }
+                TouchArea {
+                    clicked => { root.go-to-now() }
                 }
             }
         }
