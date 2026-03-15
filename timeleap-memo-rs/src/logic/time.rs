@@ -52,9 +52,4 @@ impl VirtualTime {
         self.is_playing = playing;
     }
 
-    pub fn reset(&mut self) {
-        self.current = 0.0;
-        self.max = 0.0;
-        self.is_playing = false;
-    }
 }

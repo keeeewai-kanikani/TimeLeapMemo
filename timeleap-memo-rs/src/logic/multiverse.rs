@@ -1,12 +1,9 @@
 use crate::logic::Stroke;
-use slint::{ModelRc, VecModel};
-use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct Segment {
     pub id: usize,
     pub stroke_indices: Vec<usize>,
-    pub time_created: f32, // セグメント生成時の仮想時刻
 }
 
 #[derive(Debug)]
@@ -21,7 +18,6 @@ impl WorldLineManager {
             segments: vec![Segment {
                 id: 0,
                 stroke_indices: Vec::new(),
-                time_created: 0.0,
             }],
             next_segment_id: 1,
         }
@@ -36,7 +32,6 @@ impl WorldLineManager {
             self.segments.push(Segment {
                 id: 0,
                 stroke_indices: Vec::new(),
-                time_created: 0.0,
             });
             return;
         }
@@ -44,7 +39,6 @@ impl WorldLineManager {
         let mut current_segment = Segment {
             id: 0,
             stroke_indices: Vec::new(),
-            time_created: strokes[0].virtual_time_created,
         };
 
         let mut prev_time = strokes[0].virtual_time_created;
@@ -59,7 +53,6 @@ impl WorldLineManager {
                 current_segment = Segment {
                     id: self.next_segment_id,
                     stroke_indices: vec![idx],
-                    time_created: current_time,
                 };
             } else {
                 current_segment.stroke_indices.push(idx);
@@ -72,15 +65,6 @@ impl WorldLineManager {
         self.segments.push(current_segment);
     }
 
-    /// セグメントIDを取得
-    pub fn get_segment_id(&self, stroke_idx: usize) -> usize {
-        for segment in &self.segments {
-            if segment.stroke_indices.contains(&stroke_idx) {
-                return segment.id;
-            }
-        }
-        0
-    }
 
     /// セグメントに属するストロークインデックスリストを取得
     pub fn get_segment_strokes(&self, segment_id: usize) -> Vec<usize> {

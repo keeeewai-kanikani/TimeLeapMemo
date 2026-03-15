@@ -3,8 +3,9 @@ slint::include_modules!();
 mod logic;
 mod storage;
 
-use logic::{Stroke, VirtualTime, WorldLineManager, multiverse};
+use logic::{Stroke, VirtualTime, WorldLineManager};
 use slint::{Color, SharedString, VecModel};
+use storage::AppSettings;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -22,6 +23,7 @@ fn stroke_to_svg(stroke: &Stroke, width: f32, height: f32) -> SharedString {
     }
     SharedString::from(path)
 }
+
 fn update_ui_segments(
     ui: &MainWindow,
     wlm: &WorldLineManager,
@@ -31,7 +33,7 @@ fn update_ui_segments(
     for segment in &wlm.segments {
         ui_segments.push(SegmentData {
             id: segment.id as i32,
-            y: 0.0, // SlintのVerticalLayoutが自動計算するので0.0でOK
+            y: 0.0,
             highlighted: segment.id == active_id,
         });
     }
@@ -41,11 +43,25 @@ fn update_ui_segments(
 
 fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
+    ui.window().set_maximized(true);
+
+    // Load Settings
+    let settings = storage::load_settings("settings.json").unwrap_or_default();
+    
+    // UI handle for state access
+    let state = State::get(&ui);
+    state.set_macro_ratio(settings.macro_ratio);
+    state.set_middle_ratio(settings.middle_ratio);
+
+    // Apply window maximization explicitly
+    if settings.is_maximized {
+        ui.window().set_maximized(true);
+    }
 
     // Application State
     let (initial_vt, initial_strokes) =
         storage::load_from_binary("data.bin").unwrap_or((0.0, Vec::new()));
-    let strokes = Rc::new(RefCell::new(initial_strokes));
+    let strokes = Rc::new(RefCell::<Vec<Stroke>>::new(initial_strokes));
     let current_stroke = Rc::new(RefCell::new(None::<Stroke>));
     let virtual_time = Rc::new(RefCell::new(VirtualTime::new()));
     let is_pointer_down = Rc::new(RefCell::new(false));
@@ -54,13 +70,14 @@ fn main() -> Result<(), slint::PlatformError> {
     let active_segment_id = Rc::new(RefCell::new(0usize));
 
     // Restore virtual time state
-    if !strokes.borrow().is_empty() || initial_vt > 0.0 {
+    {
         let mut vt = virtual_time.borrow_mut();
-        vt.update_max(initial_vt); // Start with at least the saved VT
+        vt.update_max(initial_vt);
         for s in strokes.borrow().iter() {
             vt.update_max(s.virtual_time_created);
         }
-        vt.set_current(initial_vt);
+        // Restore last VT from settings
+        vt.set_current(settings.last_vt);
     }
 
     // Calculate segments from loaded strokes
@@ -80,34 +97,34 @@ fn main() -> Result<(), slint::PlatformError> {
         let ui_handle = ui.as_weak();
         move |pos| {
             *is_pointer_down.borrow_mut() = true;
-            let ui = ui_handle.unwrap();
-            let state = State::get(&ui);
+            if let Some(ui) = ui_handle.upgrade() {
+                let state = State::get(&ui);
 
-            // Auto-play when starting to draw if not scrubbing
-            if !state.get_scrubbing() {
-                virtual_time.borrow_mut().set_playing(true);
-            }
+                if !state.get_scrubbing() {
+                    virtual_time.borrow_mut().set_playing(true);
+                }
 
-            if state.get_eraser() {
-                let mut s_list = strokes.borrow_mut();
-                let threshold = 0.05;
-                for stroke in s_list.iter_mut() {
-                    if !stroke.is_erased {
-                        for p in &stroke.points {
-                            let dx = p.x - pos.x;
-                            let dy = p.y - pos.y;
-                            if (dx * dx + dy * dy).sqrt() < threshold {
-                                stroke.is_erased = true;
-                                break;
+                if state.get_eraser() {
+                    let mut s_list = strokes.borrow_mut();
+                    let threshold = 0.05;
+                    for stroke in s_list.iter_mut() {
+                        if !stroke.is_erased {
+                            for p in &stroke.points {
+                                let dx = p.x - pos.x;
+                                let dy = p.y - pos.y;
+                                if (dx * dx + dy * dy).sqrt() < threshold {
+                                    stroke.is_erased = true;
+                                    break;
+                                }
                             }
                         }
                     }
+                } else {
+                    let vt = virtual_time.borrow().get_current();
+                    let mut stroke = Stroke::new(vt);
+                    stroke.add_point(pos.x, pos.y, 1.0);
+                    *current_stroke.borrow_mut() = Some(stroke);
                 }
-            } else {
-                let vt = virtual_time.borrow().get_current();
-                let mut stroke = Stroke::new(vt);
-                stroke.add_point(pos.x, pos.y, 1.0);
-                *current_stroke.borrow_mut() = Some(stroke);
             }
         }
     });
@@ -121,26 +138,27 @@ fn main() -> Result<(), slint::PlatformError> {
             if !*is_pointer_down.borrow() {
                 return;
             }
-            let ui = ui_handle.unwrap();
-            let state = State::get(&ui);
-            if state.get_eraser() {
-                let mut s_list = strokes.borrow_mut();
-                let threshold = 0.05;
-                for stroke in s_list.iter_mut() {
-                    if !stroke.is_erased {
-                        for p in &stroke.points {
-                            let dx = p.x - pos.x;
-                            let dy = p.y - pos.y;
-                            if (dx * dx + dy * dy).sqrt() < threshold {
-                                stroke.is_erased = true;
-                                break;
+            if let Some(ui) = ui_handle.upgrade() {
+                let state = State::get(&ui);
+                if state.get_eraser() {
+                    let mut s_list = strokes.borrow_mut();
+                    let threshold = 0.05;
+                    for stroke in s_list.iter_mut() {
+                        if !stroke.is_erased {
+                            for p in &stroke.points {
+                                let dx = p.x - pos.x;
+                                let dy = p.y - pos.y;
+                                if (dx * dx + dy * dy).sqrt() < threshold {
+                                    stroke.is_erased = true;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
-            } else {
-                if let Some(ref mut stroke) = *current_stroke.borrow_mut() {
-                    stroke.add_point(pos.x, pos.y, 1.0);
+                } else {
+                    if let Some(ref mut stroke) = *current_stroke.borrow_mut() {
+                        stroke.add_point(pos.x, pos.y, 1.0);
+                    }
                 }
             }
         }
@@ -161,17 +179,14 @@ fn main() -> Result<(), slint::PlatformError> {
                 let current_vt = vt.get_current();
                 strokes.borrow_mut().push(stroke);
 
-                // Recalculate segments
                 {
                     let mut wlm = world_line_manager.borrow_mut();
                     wlm.calculate_segments(&strokes.borrow());
                 }
 
-                // Save to file
                 let data = strokes.borrow().clone();
                 let _ = storage::save_to_binary("data.bin", &data, current_vt);
             }
-            // Stop time advancement when pen is released
             virtual_time.borrow_mut().set_playing(false);
         }
     });
@@ -182,7 +197,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let mut vt = virtual_time.borrow_mut();
             let max_vt = vt.get_max();
             vt.set_current(ratio * max_vt);
-            vt.set_playing(false); // Pause while scrubbing
+            vt.set_playing(false);
         }
     });
 
@@ -204,22 +219,18 @@ fn main() -> Result<(), slint::PlatformError> {
 
     ui.on_enter_chaos_pad({
         let ui_handle = ui.as_weak();
-        // ↓ クローンを追加
         let world_line_manager = world_line_manager.clone();
         let active_segment_id = active_segment_id.clone();
         
         move || {
-            // Chaos Pad モード開始時、タイムラインセグメント情報を UI に設定
             if let Some(ui) = ui_handle.upgrade() {
                 let wlm = world_line_manager.borrow();
                 let active_id = *active_segment_id.borrow();
-                // さきほど作った関数を呼び出す
                 update_ui_segments(&ui, &wlm, active_id);
             }
         }
     });
 
-    // ↓ これをまるごと追加
     ui.on_worldline_changed({
         let ui_handle = ui.as_weak();
         let world_line_manager = world_line_manager.clone();
@@ -231,24 +242,19 @@ fn main() -> Result<(), slint::PlatformError> {
             let total_segments = wlm.segment_count();
             if total_segments == 0 { return; }
 
-            // Y座標の割合から対象のインデックスを計算
             let estimated_index = (ratio_y * total_segments as f32) - 0.5;
             let mut target_index = estimated_index.round() as usize;
             target_index = target_index.clamp(0, total_segments.saturating_sub(1));
 
-            // 該当するセグメントを取得
             if let Some(segment) = wlm.segments.get(target_index) {
                 let new_id = segment.id;
                 
-                // 選択が変わった場合のみ処理する
                 if *active_segment_id.borrow() != new_id {
                     *active_segment_id.borrow_mut() = new_id;
 
                     if let Some(ui) = ui_handle.upgrade() {
-                        // 1. パッドのハイライトを更新
                         update_ui_segments(&ui, &wlm, new_id);
                         
-                        // 2. 選択された世界線のストロークIDを抽出して State にセット
                         let mut highlighted = highlighted_strokes.borrow_mut();
                         highlighted.clear();
                         highlighted.extend(segment.stroke_indices.clone());
@@ -314,7 +320,6 @@ fn main() -> Result<(), slint::PlatformError> {
             let strokes = strokes.clone();
             let current_stroke = current_stroke.clone();
             let virtual_time = virtual_time.clone();
-
             let highlighted_strokes = highlighted_strokes.clone();
 
             move || {
@@ -325,40 +330,29 @@ fn main() -> Result<(), slint::PlatformError> {
 
                     let state = State::get(&ui);
                     state.set_vt(current_vt);
+                    state.set_vt_max(vt.get_max());
                     state.set_playing(vt.is_playing());
                     let canvas_w = ui.get_canvas_width();
                     let canvas_h = ui.get_canvas_height();
 
                     let mut render_data = Vec::new();
                     let lambda = 0.13;
-
-                    // Finished strokes
-
                     let highlighted = highlighted_strokes.borrow();
-                    let is_chaos_mode = state.get_chaos_pad_mode(); // パッドが開いているかチェック
+                    let is_chaos_mode = state.get_chaos_pad_mode();
 
                     for (idx, stroke) in strokes.borrow().iter().enumerate() {
-                        if stroke.is_erased {
-                            continue;
-                        }
+                        if stroke.is_erased { continue; }
                         
-                        let mut opacity = stroke.get_alpha(current_vt, lambda);
+                        let opacity = stroke.get_alpha(current_vt, lambda);
                         let mut r = stroke.color[0];
                         let mut g = stroke.color[1];
                         let mut b = stroke.color[2];
 
-                        // --- 世界線選択中の表示切り替え ---
                         if is_chaos_mode {
                             if highlighted.contains(&idx) {
-                                // 選択中の世界線: パッドと同じピンク色(#ff00ff)にして目立たせる
-                                r = 1.0;
-                                g = 0.0;
-                                b = 1.0;
+                                r = 1.0; g = 0.0; b = 1.0;
                             } else {
-                                // それ以外の世界線: グレーにして薄くする
-                                r = 0.8;
-                                g = 0.8;
-                                b = 0.8;
+                                r = 0.8; g = 0.8; b = 0.8;
                             }
                         }
 
@@ -372,14 +366,9 @@ fn main() -> Result<(), slint::PlatformError> {
                         }
                     }
 
-                    // Current drawing stroke
                     if let Some(ref stroke) = *current_stroke.borrow() {
                         render_data.push(StrokeData {
-                            color: Color::from_rgb_f32(
-                                stroke.color[0],
-                                stroke.color[1],
-                                stroke.color[2],
-                            ),
+                            color: Color::from_rgb_f32(stroke.color[0], stroke.color[1], stroke.color[2]),
                             path_data: stroke_to_svg(stroke, canvas_w, canvas_h),
                             width: stroke.width,
                             opacity: 1.0,
@@ -393,5 +382,18 @@ fn main() -> Result<(), slint::PlatformError> {
         },
     );
 
-    ui.run()
+    let result = ui.run();
+
+    // Final Save on Exit
+    let last_vt = virtual_time.borrow().get_current();
+    let state = State::get(&ui);
+    let new_settings = AppSettings {
+        last_vt,
+        is_maximized: ui.window().is_maximized(),
+        macro_ratio: state.get_macro_ratio(),
+        middle_ratio: state.get_middle_ratio(),
+    };
+    let _ = storage::save_settings("settings.json", &new_settings);
+
+    result
 }

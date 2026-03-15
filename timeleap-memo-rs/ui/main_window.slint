@@ -16,45 +16,147 @@ struct SegmentData {
     highlighted: bool,
 }
 
+export component FractalTimeline inherits Rectangle {
+    // 1. 各レイヤーの設定
+    in property <float> timeline-max: 3600.0;
+    in property <float> middle-window-size: 600.0;
+    in property <float> micro-window-size: 120.0;
+    in property <float> current-vt: 0.0;
+
+    // 2. 外部から提供される比率と座標
+    in property <float> macro-ratio: 0.5;
+    in property <float> middle-ratio: 0.5;
+    in property <float> micro-start: 0.0;
+    
+    // 操作有効範囲の基準（初期描画を考慮して最小1秒を確保。描画が進めば State.vt-max に広がる）
+    property <float> effective-max: Math.max(1.0, State.vt-max);
+
+    callback time-changed(float);
+    callback macro-ratio-changed(float);
+    callback middle-ratio-changed(float);
+
+    clip: true;
+    height: 140px;
+
+    // ==========================================
+    // 内部計算：UI描画用のX座標
+    // ==========================================
+    // 長さ(width)を 1px で割って純粋な数値(float)に変換
+    property <float> macro-chunk-x: root.macro-ratio * (root.width / 1px);
+    property <float> middle-chunk-x: root.middle-ratio * (root.width / 1px);
+    property <float> vt-ratio: (root.current-vt - root.micro-start) / root.micro-window-size;
+    property <float> vt-x: root.vt-ratio * (root.width / 1px);
+    property <float> chunk-radius: 8.0;
+
+    // ==========================================
+    // レイヤー1/2: サーチライト（Path）
+    // ==========================================
+    Path {
+        y: 70px; width: 100%; height: 50px; fill: #2196f333;
+        MoveTo { x: 0; y: 0; }
+        LineTo { x: parent.width / 1px; y: 0; }
+        LineTo { x: root.macro-chunk-x + root.chunk-radius; y: parent.height / 1px; }
+        LineTo { x: root.macro-chunk-x - root.chunk-radius; y: parent.height / 1px; }
+        Close { }
+    }
+
+    Path {
+        y: 20px; width: 100%; height: 50px; fill: #2196f344;
+        MoveTo { x: 0; y: 0; }
+        LineTo { x: parent.width / 1px; y: 0; }
+        LineTo { x: root.middle-chunk-x + root.chunk-radius; y: parent.height / 1px; }
+        LineTo { x: root.middle-chunk-x - root.chunk-radius; y: parent.height / 1px; }
+        Close { }
+    }
+
+    // ==========================================
+    // レイヤー3: タイムライン（Micro/Middle/Macro）
+    // ==========================================
+
+    // Micro (上段)
+    Rectangle {
+        y: 10px; height: 20px; width: 100%;
+        Rectangle { y: 9px; width: 100%; height: 2px; background: #ccc; }
+        Rectangle {
+            x: (root.vt-x * 1px) - 2px; y: 0px; width: 4px; height: 20px; border-radius: 2px; background: #ff0000;
+        }
+        TouchArea {
+            property <bool> is-pressed: false;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) { self.is-pressed = true; }
+                else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) { self.is-pressed = false; }
+                if (self.is-pressed && (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move)) {
+                    let ratio = Math.max(0.0, Math.min(self.mouse-x / self.width, 1.0));
+                    let new-vt = root.micro-start + (ratio * root.micro-window-size);
+                    root.time-changed(Math.max(0.0, Math.min(new-vt, root.timeline-max)));
+                }
+            }
+        }
+        Text { text: "Micro (\{root.micro-window-size}s)"; x: 5px; y: -10px; font-size: 10px; color: #666; }
+    }
+
+    // Middle (中段)
+    Rectangle {
+        y: 60px; height: 20px; width: 100%;
+        Rectangle { y: 9px; width: 100%; height: 2px; background: #ccc; }
+        Rectangle {
+            x: (root.middle-chunk-x - root.chunk-radius) * 1px;
+            y: (10.0 - root.chunk-radius) * 1px;
+            width: (root.chunk-radius * 2.0) * 1px;
+            height: (root.chunk-radius * 2.0) * 1px;
+            border-radius: root.chunk-radius * 1px;
+            background: #2196f3; border-width: 2px; border-color: #fff;
+        }
+        TouchArea {
+            property <bool> is-pressed: false;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) { self.is-pressed = true; }
+                else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) { self.is-pressed = false; }
+                if (self.is-pressed && (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move)) {
+                    root.middle-ratio-changed(Math.max(0.0, Math.min(self.mouse-x / self.width, 1.0)));
+                }
+            }
+        }
+        Text { text: "Middle (\{root.middle-window-size}s)"; x: 5px; y: -10px; font-size: 10px; color: #666; }
+    }
+
+    // Macro (下段)
+    Rectangle {
+        y: 110px; height: 20px; width: 100%;
+        Rectangle { y: 9px; width: 100%; height: 2px; background: #ccc; }
+        Rectangle {
+            x: (root.macro-chunk-x - root.chunk-radius) * 1px;
+            y: (10.0 - root.chunk-radius) * 1px;
+            width: (root.chunk-radius * 2.0) * 1px;
+            height: (root.chunk-radius * 2.0) * 1px;
+            border-radius: root.chunk-radius * 1px;
+            background: #2196f3; border-width: 2px; border-color: #fff;
+        }
+        TouchArea {
+            property <bool> is-pressed: false;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) { self.is-pressed = true; }
+                else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) { self.is-pressed = false; }
+                if (self.is-pressed && (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move)) {
+                    root.macro-ratio-changed(Math.max(0.0, Math.min(self.mouse-x / self.width, 1.0)));
+                }
+            }
+        }
+        Text { text: "Macro (Total: \{Math.round(root.effective-max)}s)"; x: 5px; y: -10px; font-size: 10px; color: #666; }
+    }
+}
+
 export global State {
     in-out property <bool> scrubbing: false;
     in-out property <bool> eraser: false;
     in-out property <bool> playing: false;
     in-out property <float> vt: 0.0;
+    in-out property <float> vt-max: 0.0;
     in-out property <bool> chaos-pad-mode: false;
     in-out property <[int]> highlighted-strokes: [];
-}
 
-component TimelineWidget inherits Rectangle {
-    background: #f5f5f5;
-    border-color: #ddd;
-    border-width: 1px;
-
-    in property <float> timeline-max: 100.0;
-    in property <float> current-time: 0.0;
-
-    callback time-changed(float);
-
-    touch-area := TouchArea {
-        width: 100%;
-        height: 100%;
-        pointer-event(event) => {
-            if (event.kind == PointerEventKind.move || event.kind == PointerEventKind.down) {
-                let new-time = (self.mouse-x / self.width) * root.timeline-max;
-                root.time-changed(new-time);
-            }
-        }
-    }
-
-    // 現在時刻を示す縦線
-    Rectangle {
-        x: (root.current-time / root.timeline-max) * parent.width;
-        y: 0;
-        width: 2px;
-        height: 100%;
-        background: #ff0000;
-        z: 10;
-    }
+    in-out property <float> macro-ratio: 0.0;
+    in-out property <float> middle-ratio: 0.0;
 }
 
 export component MainWindow inherits Window {
@@ -64,44 +166,35 @@ export component MainWindow inherits Window {
     background: #ffffff;
     forward-focus: key-handler;
 
-    init => {
-        key-handler.focus();
-    }
+    init => { key-handler.focus(); }
+
+    // ==========================================
+    // 中央スケール定数
+    // ==========================================
+    in property <float> timeline-max: 3600.0;
+    in property <float> middle-scale: 600.0;
+    in property <float> micro-scale: 120.0;
+
+    // ==========================================
+    // 窓の開始位置計算（全階層の連動の核）
+    // ==========================================
+    property <float> effective-max: Math.max(1.0, State.vt-max);
+    property <float> macro-center: State.macro-ratio * root.effective-max;
+    property <float> middle-start: Math.max(0.0, root.macro-center - root.middle-scale / 2.0);
+    property <float> middle-center: root.middle-start + (State.middle-ratio * root.middle-scale);
+    property <float> micro-start: Math.max(0.0, root.middle-center - root.micro-scale / 2.0);
 
     key-handler := FocusScope {
         key-pressed(event) => {
-            if (event.text == "e" || event.text == "E") {
-                State.eraser = !State.eraser;
-                return accept;
-            }
-            if (event.text == "n" || event.text == "N") {
-                root.gonow();
-                return accept;
-            }
-            if (event.text == "b" || event.text == "B") {
-                State.scrubbing = true;
-                return accept;
-            }
-            if (event.text == " ") {
-                // Space キー = Chaos Pad モード開始
-                State.chaos-pad-mode = true;
-                root.enter-chaos-pad();
-                return accept;
-            }
+            if (event.text == "e" || event.text == "E") { State.eraser = !State.eraser; return accept; }
+            if (event.text == "n" || event.text == "N") { root.gonow(); return accept; }
+            if (event.text == "b" || event.text == "B") { State.scrubbing = true; return accept; }
+            if (event.text == " ") { State.chaos-pad-mode = true; root.enter-chaos-pad(); return accept; }
             return reject;
         }
-
         key-released(event) => {
-            if (event.text == "b" || event.text == "B") {
-                State.scrubbing = false;
-                return accept;
-            }
-            if (event.text == " ") {
-                // Space キー離す = Chaos Pad モード終了
-                State.chaos-pad-mode = false;
-                root.exit-chaos-pad();
-                return accept;
-            }
+            if (event.text == "b" || event.text == "B") { State.scrubbing = false; return accept; }
+            if (event.text == " ") { State.chaos-pad-mode = false; root.exit-chaos-pad(); return accept; }
             return reject;
         }
     }
@@ -120,186 +213,108 @@ export component MainWindow inherits Window {
 
     in property <[StrokeData]> strokes-to-render;
     in property <[SegmentData]> timeline-segments: [];
-    in property <float> timeline-max: 100.0;
     out property <float> canvas-width: canvas.width / 1px;
     out property <float> canvas-height: canvas.height / 1px;
 
     VerticalLayout {
-        padding: 10px;
-        spacing: 10px;
+        padding: 10px; spacing: 10px;
         
-        // Drawing Area
         canvas := Rectangle {
-            background: #ffffff;
-            border-color: #ddd;
-            border-width: 1px;
-            border-radius: 4px;
-            clip: true;
+            background: #ffffff; border-color: #ddd; border-width: 1px; border-radius: 4px; clip: true;
 
-            // ① ストロークの描画（一番下）
             for stroke in root.strokes-to-render: Path {
-                width: 100%;
-                height: 100%;
-                viewbox-width: root.canvas-width;
-                viewbox-height: root.canvas-height;
-                commands: stroke.path_data;
-                stroke: stroke.color;
-                stroke-width: stroke.width;
-                opacity: stroke.opacity;
+                width: 100%; height: 100%;
+                viewbox-width: root.canvas-width; viewbox-height: root.canvas-height;
+                commands: stroke.path_data; stroke: stroke.color; stroke-width: stroke.width; opacity: stroke.opacity;
             }
 
-            // ② マルチバースパッドの視覚表示（TouchAreaの外に出す）
             if State.chaos-pad-mode: Rectangle {
-                width: 100%;
-                height: 100%;
-                background: #2196f333;
-
+                width: 100%; height: 100%; background: #2196f333;
                 VerticalLayout {
-                    width: 100%;
-                    height: 100%;
+                    width: 100%; height: 100%;
                     for seg in root.timeline-segments: Rectangle {
                         background: seg.highlighted ? #ff00ff21 : #ffffff28;
-                        Text {
-                            text: "Worldline ID: " + seg.id;
-                            color: #fff;
-                            font-size: 12px;
-                            x: 10px;
-                            y: 10px;
-                        }
+                        Text { text: "Worldline ID: \{seg.id}"; color: #fff; font-size: 12px; x: 10px; y: 10px; }
                     }
                 }
             }
 
-            // ③ スクラビング表示
             if State.scrubbing && !State.chaos-pad-mode: Rectangle {
-                width: 100%;
-                height: 100%;
-                background: #2196f333;
-                animate background { duration: 150ms; }
-                Text {
-                    text: "TIME SCRUBBING";
-                    color: #2196f3;
-                    font-size: 24px;
-                    font-weight: 800;
-                    opacity: 0.5;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+                width: 100%; height: 100%; background: #2196f333; animate background { duration: 150ms; }
+                Text { text: "TIME SCRUBBING"; color: #2196f3; font-size: 24px; font-weight: 800; opacity: 0.5; horizontal-alignment: center; vertical-alignment: center; }
             }
 
-            // ④ タッチ操作の受付（一番手前に被せる）
             touch-area := TouchArea {
-                width: 100%;
-                height: 100%;
+                width: 100%; height: 100%;
                 pointer-event(event) => {
                     if (State.chaos-pad-mode) {
                         if (event.kind == PointerEventKind.move || event.kind == PointerEventKind.down) {
                             let ratio = self.mouse-x / self.width;
-                            root.time-changed(ratio * root.timeline-max);
+                            // 詳細窓の開始位置を基準にシーク（ID参照なしでもOK）
+                            root.time-changed(root.micro-start + ratio * root.micro-scale);
                             let ratio-y = self.mouse-y / self.height;
                             root.worldline-changed(ratio-y);
                         }
                     } else if (State.scrubbing) {
-                        if (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move) {
-                            root.scrub(self.mouse-x / self.width);
-                        }
+                        if (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move) { root.scrub(self.mouse-x / self.width); }
                     } else {
-                        if (event.kind == PointerEventKind.down) {
-                            root.pointer-down({ x: self.mouse-x / self.width, y: self.mouse-y / self.height });
-                        } else if (event.kind == PointerEventKind.move) {
-                            root.pointer-move({ x: self.mouse-x / self.width, y: self.mouse-y / self.height });
-                        } else if (event.kind == PointerEventKind.up) {
-                            root.pointer-up();
-                        }
+                        if (event.kind == PointerEventKind.down) { root.pointer-down({ x: self.mouse-x / self.width, y: self.mouse-y / self.height }); }
+                        else if (event.kind == PointerEventKind.move) { root.pointer-move({ x: self.mouse-x / self.width, y: self.mouse-y / self.height }); }
+                        else if (event.kind == PointerEventKind.up) { root.pointer-up(); }
                     }
                 }
             }
         }
 
-        // タイムラインウィジェット（Space キー時に表示）
-        if State.chaos-pad-mode: timeline-widget := TimelineWidget {
-            height: 150px;
-            timeline-max: root.timeline-max;
-            current-time: State.vt;
+        if State.chaos-pad-mode: FractalTimeline {
+            timeline-max: root.effective-max;
+            middle-window-size: root.middle-scale;
+            micro-window-size: root.micro-scale;
+            current-vt: State.vt;
+            
+            macro-ratio: State.macro-ratio;
+            middle-ratio: State.middle-ratio;
+            micro-start: root.micro-start;
 
-            time-changed(t) => {
-                root.time-changed(t);
+            macro-ratio-changed(r) => {
+                let vt-ratio = (State.vt - root.micro-start) / root.micro-scale;
+                State.macro-ratio = r;
+                // 更新された micro-start に合わせて VT も追従
+                root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), root.effective-max)));
             }
+            middle-ratio-changed(r) => {
+                let vt-ratio = (State.vt - root.micro-start) / root.micro-scale;
+                State.middle-ratio = r;
+                root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), root.effective-max)));
+            }
+            time-changed(t) => { root.time-changed(t); }
         }
 
-        // Bottom Controls
         HorizontalLayout {
-            height: 40px;
-            spacing: 20px;
-            alignment: center;
-            Text {
-                text: "Virtual Time: \{Math.round(State.vt * 100) / 100}";
-                vertical-alignment: center;
+            height: 40px; spacing: 20px; alignment: center;
+            Text { text: "Virtual Time: \{Math.round(State.vt * 100) / 100}"; vertical-alignment: center; }
+
+            Rectangle {
+                width: 70px; height: 30px; background: State.eraser ? #fb8c00 : #2196f3; border-radius: 4px;
+                Text { text: State.eraser ? "ERASER" : "PEN"; color: white; font-weight: 700; }
+                TouchArea { clicked => { State.eraser = !State.eraser } }
             }
 
             Rectangle {
-                width: 70px;
-                height: 30px;
-                background: State.eraser ? #fb8c00 : #2196f3;
-                border-radius: 4px;
-                Text {
-                    text: State.eraser ? "ERASER" : "PEN";
-                    color: white;
-                    font-weight: 700;
-                }
-
-                TouchArea {
-                    clicked => {
-                        State.eraser = !State.eraser
-                    }
-                }
-            }
-
-            PlayButton := Rectangle {
-                width: 60px;
-                height: 30px;
-                background: State.playing ? #d40000 : #00d478;
-                border-radius: 4px;
-                Text {
-                    text: State.playing ? "PAUSE" : "PLAY";
-                    color: white;
-                }
-
-                TouchArea {
-                    clicked => {
-                        root.toggleplay()
-                    }
-                }
-            }
-
-            NowButton := Rectangle {
-                width: 50px;
-                height: 30px;
-                background: #0078d4;
-                border-radius: 4px;
-                Text {
-                    text: "NOW";
-                    color: white;
-                }
-
-                TouchArea {
-                    clicked => {
-                        root.gonow()
-                    }
-                }
+                width: 60px; height: 30px; background: State.playing ? #d40000 : #00d478; border-radius: 4px;
+                Text { text: State.playing ? "PAUSE" : "PLAY"; color: white; }
+                TouchArea { clicked => { root.toggleplay() } }
             }
 
             Rectangle {
-                width: 100px;
-                height: 30px;
-                background: State.chaos-pad-mode ? #ff6b00 : #cccccc;
-                border-radius: 4px;
-                Text {
-                    text: State.chaos-pad-mode ? "パッド ON" : "Space: パッド";
-                    color: white;
-                    font-size: 11px;
-                    font-weight: 700;
-                }
+                width: 50px; height: 30px; background: #0078d4; border-radius: 4px;
+                Text { text: "NOW"; color: white; }
+                TouchArea { clicked => { root.gonow() } }
+            }
+
+            Rectangle {
+                width: 100px; height: 30px; background: State.chaos-pad-mode ? #ff6b00 : #cccccc; border-radius: 4px;
+                Text { text: State.chaos-pad-mode ? "パッド ON" : "Space: パッド"; color: white; font-size: 11px; font-weight: 700; }
             }
         }
     }

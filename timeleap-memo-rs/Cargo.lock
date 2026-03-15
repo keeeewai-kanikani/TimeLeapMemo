@@ -4552,6 +4552,7 @@ dependencies = [
  "num-traits",
  "petgraph",
  "serde",
+ "serde_json",
  "slint",
  "slint-build",
 ]
