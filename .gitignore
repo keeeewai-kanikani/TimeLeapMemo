@@ -1,0 +1,16 @@
+# Rust
+target/
+
+# VS Code
+.vscode/
+
+# Python / Nuitka
+__pycache__/
+*.exe
+*.build/
+*.dist/
+nuitka-crash-report.xml
+Releas/
+
+# OS files
+desktop.ini

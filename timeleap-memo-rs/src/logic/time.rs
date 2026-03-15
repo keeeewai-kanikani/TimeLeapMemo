@@ -17,8 +17,7 @@ impl VirtualTime {
         if self.is_playing {
             self.current += dt;
             if self.current > self.max {
-                self.current = self.max;
-                self.is_playing = false;
+                self.max = self.current;
             }
         }
     }
@@ -37,11 +36,25 @@ impl VirtualTime {
         }
     }
 
+    pub fn get_max(&self) -> f32 {
+        self.max
+    }
+
     pub fn toggle_play(&mut self) {
         self.is_playing = !self.is_playing;
     }
 
     pub fn is_playing(&self) -> bool {
         self.is_playing
+    }
+
+    pub fn set_playing(&mut self, playing: bool) {
+        self.is_playing = playing;
+    }
+
+    pub fn reset(&mut self) {
+        self.current = 0.0;
+        self.max = 0.0;
+        self.is_playing = false;
     }
 }
