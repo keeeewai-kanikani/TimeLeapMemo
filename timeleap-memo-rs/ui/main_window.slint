@@ -17,6 +17,11 @@ struct SegmentData {
     waveform-data: string,
 }
 
+struct TagData {
+    vt: float,
+    label: string,
+}
+
 export component FractalTimeline inherits Rectangle {
     // 1. 各レイヤーの設定
     in property <float> timeline-max: 3600.0;
@@ -53,20 +58,58 @@ export component FractalTimeline inherits Rectangle {
     // レイヤー1/2: サーチライト（Path）
     // ==========================================
     Path {
-        y: 70px; width: 100%; height: 50px; fill: #2196f333;
-        MoveTo { x: 0; y: 0; }
-        LineTo { x: parent.width / 1px; y: 0; }
-        LineTo { x: root.macro-chunk-x + root.chunk-radius; y: parent.height / 1px; }
-        LineTo { x: root.macro-chunk-x - root.chunk-radius; y: parent.height / 1px; }
+        y: 70px;
+        width: 100%;
+        height: 50px;
+        fill: #2196f333;
+        MoveTo {
+            x: 0;
+            y: 0;
+        }
+
+        LineTo {
+            x: parent.width / 1px;
+            y: 0;
+        }
+
+        LineTo {
+            x: root.macro-chunk-x + root.chunk-radius;
+            y: parent.height / 1px;
+        }
+
+        LineTo {
+            x: root.macro-chunk-x - root.chunk-radius;
+            y: parent.height / 1px;
+        }
+
         Close { }
     }
 
     Path {
-        y: 20px; width: 100%; height: 50px; fill: #2196f344;
-        MoveTo { x: 0; y: 0; }
-        LineTo { x: parent.width / 1px; y: 0; }
-        LineTo { x: root.middle-chunk-x + root.chunk-radius; y: parent.height / 1px; }
-        LineTo { x: root.middle-chunk-x - root.chunk-radius; y: parent.height / 1px; }
+        y: 20px;
+        width: 100%;
+        height: 50px;
+        fill: #2196f344;
+        MoveTo {
+            x: 0;
+            y: 0;
+        }
+
+        LineTo {
+            x: parent.width / 1px;
+            y: 0;
+        }
+
+        LineTo {
+            x: root.middle-chunk-x + root.chunk-radius;
+            y: parent.height / 1px;
+        }
+
+        LineTo {
+            x: root.middle-chunk-x - root.chunk-radius;
+            y: parent.height / 1px;
+        }
+
         Close { }
     }
 
@@ -76,16 +119,33 @@ export component FractalTimeline inherits Rectangle {
 
     // Micro (上段)
     Rectangle {
-        y: 10px; height: 20px; width: 100%;
-        Rectangle { y: 9px; width: 100%; height: 2px; background: #ccc; }
+        y: 10px;
+        height: 20px;
+        width: 100%;
         Rectangle {
-            x: (root.vt-x * 1px) - 2px; y: 0px; width: 4px; height: 20px; border-radius: 2px; background: #ff0000;
+            y: 9px;
+            width: 100%;
+            height: 2px;
+            background: #ccc;
         }
+
+        Rectangle {
+            x: (root.vt-x * 1px) - 2px;
+            y: 0px;
+            width: 4px;
+            height: 20px;
+            border-radius: 2px;
+            background: #ff0000;
+        }
+
         TouchArea {
             property <bool> is-pressed: false;
             pointer-event(event) => {
-                if (event.kind == PointerEventKind.down) { self.is-pressed = true; }
-                else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) { self.is-pressed = false; }
+                if (event.kind == PointerEventKind.down) {
+                    self.is-pressed = true;
+                } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    self.is-pressed = false;
+                }
                 if (self.is-pressed && (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move)) {
                     let ratio = Math.max(0.0, Math.min(self.mouse-x / self.width, 1.0));
                     let new-vt = root.micro-start + (ratio * root.micro-window-size);
@@ -93,57 +153,139 @@ export component FractalTimeline inherits Rectangle {
                 }
             }
         }
-        Text { text: "Micro (\{root.micro-window-size}s)"; x: 5px; y: -10px; font-size: 10px; color: #666; }
+
+        Text {
+            text: "Micro (\{root.micro-window-size}s)";
+            x: 5px;
+            y: -10px;
+            font-size: 10px;
+            color: #666;
+        }
+
+        for tag in State.tags: Rectangle {
+            property <float> rel-x: (tag.vt - root.micro-start) / root.micro-window-size;
+            visible: rel-x >= 0.0 && rel-x <= 1.0;
+            x: (rel-x * parent.width / 1px) * 1px - 4px;
+            y: 4px;
+            width: 8px; height: 12px;
+            background: #00bcd4;
+            border-radius: 2px;
+            border-width: 1px; border-color: white;
+        }
     }
 
     // Middle (中段)
     Rectangle {
-        y: 60px; height: 20px; width: 100%;
-        Rectangle { y: 9px; width: 100%; height: 2px; background: #ccc; }
+        y: 60px;
+        height: 20px;
+        width: 100%;
+        Rectangle {
+            y: 9px;
+            width: 100%;
+            height: 2px;
+            background: #ccc;
+        }
+
         Rectangle {
             x: (root.middle-chunk-x - root.chunk-radius) * 1px;
             y: (10.0 - root.chunk-radius) * 1px;
             width: (root.chunk-radius * 2.0) * 1px;
             height: (root.chunk-radius * 2.0) * 1px;
             border-radius: root.chunk-radius * 1px;
-            background: #2196f3; border-width: 2px; border-color: #fff;
+            background: #2196f3;
+            border-width: 2px;
+            border-color: #fff;
         }
+
         TouchArea {
             property <bool> is-pressed: false;
             pointer-event(event) => {
-                if (event.kind == PointerEventKind.down) { self.is-pressed = true; }
-                else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) { self.is-pressed = false; }
+                if (event.kind == PointerEventKind.down) {
+                    self.is-pressed = true;
+                } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    self.is-pressed = false;
+                }
                 if (self.is-pressed && (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move)) {
                     root.middle-ratio-changed(Math.max(0.0, Math.min(self.mouse-x / self.width, 1.0)));
                 }
             }
         }
-        Text { text: "Middle (\{root.middle-window-size}s)"; x: 5px; y: -10px; font-size: 10px; color: #666; }
+
+        Text {
+            text: "Middle (\{root.middle-window-size}s)";
+            x: 5px;
+            y: -10px;
+            font-size: 10px;
+            color: #666;
+        }
+
+        for tag in State.tags: Rectangle {
+            property <float> m-center: root.macro-ratio * root.effective-max;
+            property <float> m-start: Math.max(0.0, m-center - root.middle-window-size / 2.0);
+            property <float> rel-x: (tag.vt - m-start) / root.middle-window-size;
+            visible: rel-x >= 0.0 && rel-x <= 1.0;
+            x: (rel-x * parent.width / 1px) * 1px - 3px;
+            y: 5px;
+            width: 6px; height: 10px;
+            background: #00bcd4;
+            opacity: 0.8;
+            border-radius: 1px;
+        }
     }
 
     // Macro (下段)
     Rectangle {
-        y: 110px; height: 20px; width: 100%;
-        Rectangle { y: 9px; width: 100%; height: 2px; background: #ccc; }
+        y: 110px;
+        height: 20px;
+        width: 100%;
+        Rectangle {
+            y: 9px;
+            width: 100%;
+            height: 2px;
+            background: #ccc;
+        }
+
         Rectangle {
             x: (root.macro-chunk-x - root.chunk-radius) * 1px;
             y: (10.0 - root.chunk-radius) * 1px;
             width: (root.chunk-radius * 2.0) * 1px;
             height: (root.chunk-radius * 2.0) * 1px;
             border-radius: root.chunk-radius * 1px;
-            background: #2196f3; border-width: 2px; border-color: #fff;
+            background: #2196f3;
+            border-width: 2px;
+            border-color: #fff;
         }
+
         TouchArea {
             property <bool> is-pressed: false;
             pointer-event(event) => {
-                if (event.kind == PointerEventKind.down) { self.is-pressed = true; }
-                else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) { self.is-pressed = false; }
+                if (event.kind == PointerEventKind.down) {
+                    self.is-pressed = true;
+                } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    self.is-pressed = false;
+                }
                 if (self.is-pressed && (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move)) {
                     root.macro-ratio-changed(Math.max(0.0, Math.min(self.mouse-x / self.width, 1.0)));
                 }
             }
         }
-        Text { text: "Macro (Total: \{Math.round(root.effective-max)}s)"; x: 5px; y: -10px; font-size: 10px; color: #666; }
+
+        Text {
+            text: "Macro (Total: \{Math.round(root.effective-max)}s)";
+            x: 5px;
+            y: -10px;
+            font-size: 10px;
+            color: #666;
+        }
+
+        for tag in State.tags: Rectangle {
+            property <float> rel-x: tag.vt / root.effective-max;
+            x: (rel-x * parent.width / 1px) * 1px - 2px;
+            y: 6px;
+            width: 4px; height: 8px;
+            background: #00bcd4;
+            opacity: 0.6;
+        }
     }
 }
 
@@ -155,22 +297,24 @@ export global State {
     in-out property <float> vt-max: 0.0;
     in-out property <bool> chaos-pad-mode: false;
     in-out property <[int]> highlighted-strokes: [];
-
     in-out property <float> macro-ratio: 0.0;
     in-out property <float> middle-ratio: 0.0;
     in-out property <bool> fullscreen: false;
+    in-out property <[TagData]> tags: [];
 }
 
 export component MainWindow inherits Window {
     title: "TimeLeap Memo (Rust)";
     icon: @image-url("../../Icon/タイムリープメモ_アイコン.svg");
-    width: 1000px;
-    height: 700px;
+    width: 1280px;
+    height: 720px;
     background: #ffffff;
     full-screen: State.fullscreen;
     forward-focus: key-handler;
 
-    init => { key-handler.focus(); }
+    init => {
+        key-handler.focus();
+    }
 
     // ==========================================
     // 中央スケール定数
@@ -190,14 +334,34 @@ export component MainWindow inherits Window {
 
     key-handler := FocusScope {
         key-pressed(event) => {
-            if (event.text == "e" || event.text == "E" || event.text == "1") { State.eraser = !State.eraser; return accept; }
-            if (event.text == "n" || event.text == "N" || event.text == "3") { root.gonow(); return accept; }
-            if (event.text == "b" || event.text == "B") { State.scrubbing = true; return accept; }
-            if (event.text == " ") { State.chaos-pad-mode = true; root.enter-chaos-pad(); return accept; }
+            if (event.text == "e" || event.text == "E" || event.text == "1") {
+                State.eraser = !State.eraser;
+                return accept;
+            }
+            if (event.text == "n" || event.text == "N" || event.text == "3") {
+                root.gonow();
+                return accept;
+            }
+            if (event.text == "b" || event.text == "B") {
+                State.scrubbing = true;
+                return accept;
+            }
+            if (event.text == " ") {
+                State.chaos-pad-mode = true;
+                root.enter-chaos-pad();
+                return accept;
+            }
+            if (event.text == "t" || event.text == "T") {
+                root.add-tag();
+                return accept;
+            }
             if (event.text == "2") {
                 State.chaos-pad-mode = !State.chaos-pad-mode;
-                if (State.chaos-pad-mode) { root.enter-chaos-pad(); }
-                else { root.exit-chaos-pad(); }
+                if (State.chaos-pad-mode) {
+                    root.enter-chaos-pad();
+                } else {
+                    root.exit-chaos-pad();
+                }
                 return accept;
             }
             if (event.text == "f" || event.text == "F" || event.text == "F11") {
@@ -207,8 +371,15 @@ export component MainWindow inherits Window {
             return reject;
         }
         key-released(event) => {
-            if (event.text == "b" || event.text == "B") { State.scrubbing = false; return accept; }
-            if (event.text == " ") { State.chaos-pad-mode = false; root.exit-chaos-pad(); return accept; }
+            if (event.text == "b" || event.text == "B") {
+                State.scrubbing = false;
+                return accept;
+            }
+            if (event.text == " ") {
+                State.chaos-pad-mode = false;
+                root.exit-chaos-pad();
+                return accept;
+            }
             return reject;
         }
     }
@@ -224,6 +395,7 @@ export component MainWindow inherits Window {
     callback time-changed(float);
     callback segment-selected(int);
     callback worldline-changed(float);
+    callback add-tag();
 
     in property <[StrokeData]> strokes-to-render;
     in property <[SegmentData]> timeline-segments: [];
@@ -231,29 +403,52 @@ export component MainWindow inherits Window {
     out property <float> canvas-height: canvas.height / 1px;
 
     VerticalLayout {
-        padding: 10px; spacing: 10px;
-        
+        padding: 10px;
+        spacing: 10px;
         canvas := Rectangle {
-            background: #ffffff; border-color: #ddd; border-width: 1px; border-radius: 4px; clip: true;
+            background: #ffffff;
+            border-color: #ddd;
+            border-width: 1px;
+            border-radius: 4px;
+            clip: true;
 
             for stroke in root.strokes-to-render: Path {
-                width: 100%; height: 100%;
-                viewbox-width: root.canvas-width; viewbox-height: root.canvas-height;
-                commands: stroke.path_data; stroke: stroke.color; stroke-width: stroke.width; opacity: stroke.opacity;
+                width: 100%;
+                height: 100%;
+                viewbox-width: root.canvas-width;
+                viewbox-height: root.canvas-height;
+                commands: stroke.path_data;
+                stroke: stroke.color;
+                stroke-width: stroke.width;
+                opacity: stroke.opacity;
             }
 
             if State.chaos-pad-mode: Rectangle {
-                width: 100%; height: 100%; background: #2196f333;
+                width: 100%;
+                height: 100%;
+                background: #2196f333;
                 VerticalLayout {
-                    padding: 0; spacing: 0;
-                    width: 100%; height: 100%;
+                    padding: 0;
+                    spacing: 0;
+                    width: 100%;
+                    height: 100%;
                     for seg in root.timeline-segments: Rectangle {
                         background: seg.highlighted ? #ff00ff21 : #ffffff28;
-                        Text { text: "Worldline ID: \{seg.id}"; color: #fff; font-size: 12px; x: 10px; y: 10px; }
-                        
+                        Text {
+                            text: "Worldline ID: \{seg.id}";
+                            color: #fff;
+                            font-size: 12px;
+                            x: 10px;
+                            y: 10px;
+                        }
+
                         Path {
-                            width: 100%; height: 100%;
-                            viewbox-width: 100; viewbox-height: 100;
+                            width: 100%;
+                            height: 100%;
+    
+                            // X座標はキャンバス幅に、Y座標はRust側の基準(100)に合わせる
+                            viewbox-width: root.canvas-width;
+                            viewbox-height: root.canvas-height / Math.max(1, root.timeline-segments.length);
                             commands: seg.waveform-data;
                             fill: seg.highlighted ? #ff00ff44 : #2196f344;
                         }
@@ -270,12 +465,24 @@ export component MainWindow inherits Window {
             }
 
             if State.scrubbing && !State.chaos-pad-mode: Rectangle {
-                width: 100%; height: 100%; background: #2196f333; animate background { duration: 150ms; }
-                Text { text: "TIME SCRUBBING"; color: #2196f3; font-size: 24px; font-weight: 800; opacity: 0.5; horizontal-alignment: center; vertical-alignment: center; }
+                width: 100%;
+                height: 100%;
+                background: #2196f333;
+                animate background { duration: 150ms; }
+                Text {
+                    text: "TIME SCRUBBING";
+                    color: #2196f3;
+                    font-size: 24px;
+                    font-weight: 800;
+                    opacity: 0.5;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
             }
 
             touch-area := TouchArea {
-                width: 100%; height: 100%;
+                width: 100%;
+                height: 100%;
                 pointer-event(event) => {
                     if (State.chaos-pad-mode) {
                         if (event.kind == PointerEventKind.move || event.kind == PointerEventKind.down) {
@@ -286,11 +493,17 @@ export component MainWindow inherits Window {
                             root.worldline-changed(ratio-y);
                         }
                     } else if (State.scrubbing) {
-                        if (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move) { root.scrub(self.mouse-x / self.width); }
+                        if (event.kind == PointerEventKind.down || event.kind == PointerEventKind.move) {
+                            root.scrub(self.mouse-x / self.width);
+                        }
                     } else {
-                        if (event.kind == PointerEventKind.down) { root.pointer-down({ x: self.mouse-x / self.width, y: self.mouse-y / self.height }); }
-                        else if (event.kind == PointerEventKind.move) { root.pointer-move({ x: self.mouse-x / self.width, y: self.mouse-y / self.height }); }
-                        else if (event.kind == PointerEventKind.up) { root.pointer-up(); }
+                        if (event.kind == PointerEventKind.down) {
+                            root.pointer-down({ x: self.mouse-x / self.width, y: self.mouse-y / self.height });
+                        } else if (event.kind == PointerEventKind.move) {
+                            root.pointer-move({ x: self.mouse-x / self.width, y: self.mouse-y / self.height });
+                        } else if (event.kind == PointerEventKind.up) {
+                            root.pointer-up();
+                        }
                     }
                 }
             }
@@ -301,7 +514,6 @@ export component MainWindow inherits Window {
             middle-window-size: root.middle-scale;
             micro-window-size: root.micro-scale;
             current-vt: State.vt;
-            
             macro-ratio: State.macro-ratio;
             middle-ratio: State.middle-ratio;
             micro-start: root.micro-start;
@@ -319,34 +531,83 @@ export component MainWindow inherits Window {
                 State.middle-ratio = snap-r;
                 root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), State.vt-max)));
             }
-            time-changed(t) => { root.time-changed(t); }
+            time-changed(t) => {
+                root.time-changed(t);
+            }
         }
 
         HorizontalLayout {
-            height: 40px; spacing: 20px; alignment: center;
-            Text { text: "Virtual Time: \{Math.round(State.vt * 100) / 100}"; vertical-alignment: center; }
-
-            Rectangle {
-                width: 70px; height: 30px; background: State.eraser ? #fb8c00 : #2196f3; border-radius: 4px;
-                Text { text: State.eraser ? "ERASER" : "PEN"; color: white; font-weight: 700; }
-                TouchArea { clicked => { State.eraser = !State.eraser } }
+            height: 40px;
+            spacing: 20px;
+            alignment: center;
+            Text {
+                text: "Virtual Time: \{Math.round(State.vt * 100) / 100}";
+                vertical-alignment: center;
             }
 
             Rectangle {
-                width: 60px; height: 30px; background: State.playing ? #d40000 : #00d478; border-radius: 4px;
-                Text { text: State.playing ? "PAUSE" : "PLAY"; color: white; }
-                TouchArea { clicked => { root.toggleplay() } }
+                width: 70px;
+                height: 30px;
+                background: State.eraser ? #fb8c00 : #2196f3;
+                border-radius: 4px;
+                Text {
+                    text: State.eraser ? "ERASER" : "PEN";
+                    color: white;
+                    font-weight: 700;
+                }
+
+                TouchArea {
+                    clicked => {
+                        State.eraser = !State.eraser
+                    }
+                }
             }
 
             Rectangle {
-                width: 50px; height: 30px; background: #0078d4; border-radius: 4px;
-                Text { text: "NOW"; color: white; }
-                TouchArea { clicked => { root.gonow() } }
+                width: 60px;
+                height: 30px;
+                background: State.playing ? #d40000 : #00d478;
+                border-radius: 4px;
+                Text {
+                    text: State.playing ? "PAUSE" : "PLAY";
+                    color: white;
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.toggleplay()
+                    }
+                }
             }
 
             Rectangle {
-                width: 100px; height: 30px; background: State.chaos-pad-mode ? #ff6b00 : #cccccc; border-radius: 4px;
-                Text { text: State.chaos-pad-mode ? "パッド ON" : "Space: パッド"; color: white; font-size: 11px; font-weight: 700; }
+                width: 50px;
+                height: 30px;
+                background: #0078d4;
+                border-radius: 4px;
+                Text {
+                    text: "NOW";
+                    color: white;
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.gonow()
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 100px;
+                height: 30px;
+                background: State.chaos-pad-mode ? #ff6b00 : #cccccc;
+                border-radius: 4px;
+                Text {
+                    text: State.chaos-pad-mode ? "パッド ON" : "Space: パッド";
+                    color: white;
+                    font-size: 11px;
+                    font-weight: 700;
+                }
             }
         }
     }

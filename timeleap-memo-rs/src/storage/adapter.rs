@@ -1,24 +1,25 @@
-use crate::logic::Stroke;
+use crate::logic::{Stroke, ImpressionTag};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 use serde::{Serialize, Deserialize};
 
 #[allow(dead_code)]
-pub fn save_to_binary<P: AsRef<Path>>(path: P, strokes: &[Stroke], virtual_time: f32) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_to_binary<P: AsRef<Path>>(path: P, strokes: &[Stroke], tags: &[ImpressionTag], virtual_time: f32) -> Result<(), Box<dyn std::error::Error>> {
     let file = File::create(path)?;
     let writer = BufWriter::new(file);
     
-    // We can wrap strokes and metadata in a single serializable struct
     #[derive(serde::Serialize)]
     struct SaveData<'a> {
         virtual_time: f32,
         strokes: &'a [Stroke],
+        tags: &'a [ImpressionTag],
     }
     
     let data = SaveData {
         virtual_time,
         strokes,
+        tags,
     };
     
     bincode::serialize_into(writer, &data)?;
@@ -26,7 +27,7 @@ pub fn save_to_binary<P: AsRef<Path>>(path: P, strokes: &[Stroke], virtual_time:
 }
 
 #[allow(dead_code)]
-pub fn load_from_binary<P: AsRef<Path>>(path: P) -> Result<(f32, Vec<Stroke>), Box<dyn std::error::Error>> {
+pub fn load_from_binary<P: AsRef<Path>>(path: P) -> Result<(f32, Vec<Stroke>, Vec<ImpressionTag>), Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     
@@ -34,10 +35,11 @@ pub fn load_from_binary<P: AsRef<Path>>(path: P) -> Result<(f32, Vec<Stroke>), B
     struct LoadData {
         virtual_time: f32,
         strokes: Vec<Stroke>,
+        tags: Option<Vec<ImpressionTag>>,
     }
     
     let data: LoadData = bincode::deserialize_from(reader)?;
-    Ok((data.virtual_time, data.strokes))
+    Ok((data.virtual_time, data.strokes, data.tags.unwrap_or_default()))
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppSettings {

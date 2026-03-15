@@ -13,7 +13,7 @@ pub struct Stroke {
     pub width: f32,
     pub color: [f32; 3], // [r, g, b]
     pub virtual_time_created: f32,
-    pub is_erased: bool,
+    pub erased_at: Option<f32>,
     pub segment_id: usize, // 世界線（セグメント）ID
 }
 
@@ -24,7 +24,7 @@ impl Stroke {
             width: 6.0,
             color: [0.0, 0.0, 0.0],
             virtual_time_created: virtual_time,
-            is_erased: false,
+            erased_at: None,
             segment_id: 0,
         }
     }

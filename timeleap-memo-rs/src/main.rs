@@ -4,7 +4,7 @@ slint::include_modules!();
 mod logic;
 mod storage;
 
-use logic::{Stroke, VirtualTime, WorldLineManager};
+use logic::{Stroke, VirtualTime, WorldLineManager, ImpressionTag};
 use slint::{Color, SharedString, VecModel};
 use storage::AppSettings;
 use std::cell::RefCell;
@@ -36,6 +36,14 @@ fn update_ui_segments(
     let samples = 100;
     let lambda = 0.13;
 
+    // キャンバスの幅と「高さ」を取得
+    let canvas_w = ui.get_canvas_width();
+    let canvas_h = ui.get_canvas_height();
+    
+    // セグメント数から「1バンドあたりの高さ」を計算 (0除算防止のため max(1) を使う)
+    let seg_count = wlm.segments.len().max(1) as f32;
+    let seg_h = canvas_h / seg_count;
+
     for segment in &wlm.segments {
         let mut waveform = String::new();
         if vt_max > 0.0 && !segment.stroke_indices.is_empty() {
@@ -48,28 +56,35 @@ fn update_ui_segments(
                 for &idx in &segment.stroke_indices {
                     let s = &strokes[idx];
                     if s.virtual_time_created <= t {
-                        let age = t - s.virtual_time_created;
-                        let alpha = (-lambda * age).exp();
-                        if alpha > 0.01 {
-                            d += (s.points.len() as f32) * alpha;
+                        // 消去された時間より前であれば密度に加算する
+                        let is_erased_at_t = s.erased_at.map_or(false, |ea| t >= ea);
+                        if !is_erased_at_t {
+                            let age = t - s.virtual_time_created;
+                            let alpha = (-lambda * age).exp();
+                            if alpha > 0.01 {
+                                d += (s.points.len() as f32) * alpha;
+                            }
                         }
                     }
                 }
                 densities.push(d);
                 if d > max_d { max_d = d; }
             }
-            // 垂直方向にいっぱいに広がるように正規化
             if max_d < 1.0 { max_d = 1.0; }
 
-            waveform.push_str("M 0 50");
+            // Y軸の中心と、波が広がる最大幅を計算
+            let center_y = seg_h / 2.0;
+            let amplitude = center_y * 0.9; // 0.9を掛けて上下に少しだけ余白を作る
+
+            waveform.push_str(&format!("M 0 {:.1}", center_y));
             for (i, &d) in densities.iter().enumerate() {
-                let x = (i as f32 / (samples - 1) as f32) * 100.0;
-                let y = 50.0 - (d / max_d) * 45.0;
+                let x = (i as f32 / (samples - 1) as f32) * canvas_w;
+                let y = center_y - (d / max_d) * amplitude;
                 waveform.push_str(&format!(" L {:.1} {:.1}", x, y));
             }
             for (i, &d) in densities.iter().enumerate().rev() {
-                let x = (i as f32 / (samples - 1) as f32) * 100.0;
-                let y = 50.0 + (d / max_d) * 45.0;
+                let x = (i as f32 / (samples - 1) as f32) * canvas_w;
+                let y = center_y + (d / max_d) * amplitude;
                 waveform.push_str(&format!(" L {:.1} {:.1}", x, y));
             }
             waveform.push_str(" Z");
@@ -79,13 +94,21 @@ fn update_ui_segments(
             id: segment.id as i32,
             y: 0.0,
             highlighted: segment.id == active_id,
-            waveform_data: SharedString::from(waveform),
+            waveform_data: slint::SharedString::from(waveform),
         });
     }
-    let segments_model = Rc::new(VecModel::from(ui_segments));
+    let segments_model = std::rc::Rc::new(slint::VecModel::from(ui_segments));
     ui.set_timeline_segments(segments_model.into());
 }
 
+fn update_ui_tags(ui: &MainWindow, tags: &[ImpressionTag]) {
+    let ui_tags: Vec<TagData> = tags.iter().map(|t| TagData {
+        vt: t.virtual_time,
+        label: slint::SharedString::from(&t.label),
+    }).collect();
+    let tags_model = std::rc::Rc::new(slint::VecModel::from(ui_tags));
+    State::get(ui).set_tags(tags_model.into());
+}
 fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     ui.window().set_maximized(true);
@@ -104,9 +127,10 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // Application State
-    let (initial_vt, initial_strokes) =
-        storage::load_from_binary("data.bin").unwrap_or((0.0, Vec::new()));
+    let (initial_vt, initial_strokes, initial_tags) =
+        storage::load_from_binary("data.bin").unwrap_or((0.0, Vec::new(), Vec::new()));
     let strokes = Rc::new(RefCell::<Vec<Stroke>>::new(initial_strokes));
+    let tags = Rc::new(RefCell::<Vec<ImpressionTag>>::new(initial_tags));
     let current_stroke = Rc::new(RefCell::new(None::<Stroke>));
     let virtual_time = Rc::new(RefCell::new(VirtualTime::new()));
     let is_pointer_down = Rc::new(RefCell::new(false));
@@ -121,6 +145,9 @@ fn main() -> Result<(), slint::PlatformError> {
         for s in strokes.borrow().iter() {
             vt.update_max(s.virtual_time_created);
         }
+        for t in tags.borrow().iter() {
+            vt.update_max(t.virtual_time);
+        }
         // Restore last VT from settings
         vt.set_current(settings.last_vt);
     }
@@ -130,6 +157,9 @@ fn main() -> Result<(), slint::PlatformError> {
         let mut wlm = world_line_manager.borrow_mut();
         wlm.calculate_segments(&strokes.borrow());
     }
+
+    // Initial UI update for tags
+    update_ui_tags(&ui, &tags.borrow());
 
     let ui_handle = ui.as_weak();
 
@@ -145,20 +175,22 @@ fn main() -> Result<(), slint::PlatformError> {
             if let Some(ui) = ui_handle.upgrade() {
                 let state = State::get(&ui);
 
+                let current_vt = virtual_time.borrow().get_current();
+
                 if !state.get_scrubbing() {
                     virtual_time.borrow_mut().set_playing(true);
                 }
-
                 if state.get_eraser() {
                     let mut s_list = strokes.borrow_mut();
                     let threshold = 0.05;
                     for stroke in s_list.iter_mut() {
-                        if !stroke.is_erased {
+                        let is_erased_now = stroke.erased_at.map_or(false, |ea| current_vt >= ea);
+                        if !is_erased_now {
                             for p in &stroke.points {
                                 let dx = p.x - pos.x;
                                 let dy = p.y - pos.y;
                                 if (dx * dx + dy * dy).sqrt() < threshold {
-                                    stroke.is_erased = true;
+                                    stroke.erased_at = Some(current_vt);
                                     break;
                                 }
                             }
@@ -175,6 +207,7 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     ui.on_pointer_move({
+        let virtual_time = virtual_time.clone();
         let current_stroke = current_stroke.clone();
         let strokes = strokes.clone();
         let is_pointer_down = is_pointer_down.clone();
@@ -188,13 +221,15 @@ fn main() -> Result<(), slint::PlatformError> {
                 if state.get_eraser() {
                     let mut s_list = strokes.borrow_mut();
                     let threshold = 0.05;
+                    let current_vt = virtual_time.borrow().get_current();
                     for stroke in s_list.iter_mut() {
-                        if !stroke.is_erased {
+                        let is_already_erased = stroke.erased_at.map_or(false, |ea| current_vt >= ea);
+                        if !is_already_erased {
                             for p in &stroke.points {
                                 let dx = p.x - pos.x;
                                 let dy = p.y - pos.y;
                                 if (dx * dx + dy * dy).sqrt() < threshold {
-                                    stroke.is_erased = true;
+                                    stroke.erased_at = Some(current_vt);
                                     break;
                                 }
                             }
@@ -215,6 +250,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let virtual_time = virtual_time.clone();
         let is_pointer_down = is_pointer_down.clone();
         let world_line_manager = world_line_manager.clone();
+        let tags = tags.clone();
         move || {
             *is_pointer_down.borrow_mut() = false;
             if let Some(stroke) = current_stroke.borrow_mut().take() {
@@ -230,7 +266,8 @@ fn main() -> Result<(), slint::PlatformError> {
                 }
 
                 let data = strokes.borrow().clone();
-                let _ = storage::save_to_binary("data.bin", &data, current_vt);
+                let tag_data = tags.borrow().clone();
+                let _ = storage::save_to_binary("data.bin", &data, &tag_data, current_vt);
             }
             virtual_time.borrow_mut().set_playing(false);
         }
@@ -276,6 +313,26 @@ fn main() -> Result<(), slint::PlatformError> {
                 let vt_max = virtual_time.borrow().get_max();
                 let active_id = *active_segment_id.borrow();
                 update_ui_segments(&ui, &wlm, &s_list, vt_max, active_id);
+            }
+        }
+    });
+
+    ui.on_add_tag({
+        let ui_handle = ui.as_weak();
+        let tags = tags.clone();
+        let virtual_time = virtual_time.clone();
+        let strokes = strokes.clone();
+        move || {
+            if let Some(ui) = ui_handle.upgrade() {
+                let vt = virtual_time.borrow().get_current();
+                let mut tag_list = tags.borrow_mut();
+                let label = format!("Tag {}", tag_list.len() + 1);
+                tag_list.push(ImpressionTag::new(vt, label));
+                update_ui_tags(&ui, &tag_list);
+
+                // Auto-save when tag is added
+                let data = strokes.borrow().clone();
+                let _ = storage::save_to_binary("data.bin", &data, &tag_list, vt);
             }
         }
     });
@@ -397,19 +454,33 @@ fn main() -> Result<(), slint::PlatformError> {
                     let is_chaos_mode = state.get_chaos_pad_mode();
 
                     for (idx, stroke) in strokes.borrow().iter().enumerate() {
-                        if stroke.is_erased { continue; }
+                        // 消去された時間より後であれば表示しない
+                        if let Some(ea) = stroke.erased_at {
+                            if current_vt >= ea { continue; }
+                        }
                         
-                        let opacity = stroke.get_alpha(current_vt, lambda);
+                        let dt = current_vt - stroke.virtual_time_created;
                         let mut r = stroke.color[0];
                         let mut g = stroke.color[1];
                         let mut b = stroke.color[2];
+                        let mut opacity = 0.0;
 
-                        if is_chaos_mode {
-                            if highlighted.contains(&idx) {
-                                r = 1.0; g = 0.0; b = 1.0;
-                            } else {
-                                r = 0.8; g = 0.8; b = 0.8;
+                        if dt >= 0.0 {
+                            // 過去〜現在：通常のフェードアウト表示
+                            opacity = stroke.get_alpha(current_vt, lambda);
+                            if is_chaos_mode {
+                                if highlighted.contains(&idx) {
+                                    r = 1.0; g = 0.0; b = 1.0;
+                                } else {
+                                    r = 0.8; g = 0.8; b = 0.8;
+                                }
                             }
+                        } else if !is_chaos_mode && dt >= -7.5 {
+                            // 未来：オニオンスキン（緑色でフェードイン）
+                            r = 0.0; g = 1.0; b = 0.0;
+                            // 近づくにつれて不透明度を上げる (fade-in)
+                            opacity = 1.0 - (dt.abs() / 7.5);
+                            opacity *= 0.6; // オニオンスキン自体の最大透明度を少し抑える
                         }
 
                         if opacity > 0.01 {
