@@ -515,6 +515,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let tags = tags.clone();
             let mut waveform_update_counter = 0;
             let mut last_search_query = String::new();
+            let mut last_active_tag = String::new();
 
             move || {
                 let now = std::time::Instant::now();
@@ -548,6 +549,19 @@ fn main() -> Result<(), slint::PlatformError> {
                     let lambda = 0.13;
                     let highlighted = highlighted_strokes.borrow();
                     let is_chaos_mode = state.get_chaos_pad_mode();
+                    let tag_list = tags.borrow();
+
+                    // Find active tag (the one just before or at current_vt)
+                    let active_tag_name = tag_list.iter()
+                        .filter(|t| t.virtual_time <= current_vt + 0.001)
+                        .max_by(|a, b| a.virtual_time.partial_cmp(&b.virtual_time).unwrap())
+                        .map(|t| t.label.clone())
+                        .unwrap_or_default();
+                    
+                    if active_tag_name != last_active_tag {
+                        state.set_active_tag_label(active_tag_name.clone().into());
+                        last_active_tag = active_tag_name;
+                    }
 
                     {
                         let mut strokes_borrow = strokes.borrow_mut();

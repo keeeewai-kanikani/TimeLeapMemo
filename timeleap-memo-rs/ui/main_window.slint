@@ -332,6 +332,7 @@ export global State {
     in-out property <string> tag-search-query: "";
     in-out property <bool> show-tag-editor: false;
     in-out property <string> tag-name-input: "";
+    in-out property <string> active-tag-label: "";
 }
 
 export component MainWindow inherits Window {
@@ -552,6 +553,17 @@ export component MainWindow inherits Window {
                     }
                 }
             }
+
+            // Contextual Tag Label (Flat Design)
+            if State.active-tag-label != "": Text {
+                x: 15px;
+                y: 15px;
+                text: State.active-tag-label;
+                font-size: 18px;
+                font-weight: 800;
+                color: #00bcd4;
+                opacity: 0.7;
+            }
         }
 
         if State.chaos-pad-mode: FractalTimeline {
@@ -565,16 +577,11 @@ export component MainWindow inherits Window {
 
             macro-ratio-changed(r) => {
                 let snap-r = r > 0.98 ? 1.0 : r;
-                let vt-ratio = (State.vt - root.micro-start) / root.micro-scale;
                 State.macro-ratio = snap-r;
-                // 更新された micro-start に合わせて VT も追従
-                root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), State.vt-max)));
             }
             middle-ratio-changed(r) => {
                 let snap-r = r > 0.98 ? 1.0 : r;
-                let vt-ratio = (State.vt - root.micro-start) / root.micro-scale;
                 State.middle-ratio = snap-r;
-                root.time-changed(Math.max(0.0, Math.min(root.micro-start + (vt-ratio * root.micro-scale), State.vt-max)));
             }
             time-changed(t) => {
                 root.time-changed(t);

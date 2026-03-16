@@ -13,13 +13,13 @@ pub fn save_to_binary<P: AsRef<Path>>(path: P, strokes: &[Stroke], tags: &[Impre
     struct SaveData<'a> {
         virtual_time: f32,
         strokes: &'a [Stroke],
-        tags: &'a [ImpressionTag],
+        tags: Option<&'a [ImpressionTag]>,
     }
     
     let data = SaveData {
         virtual_time,
         strokes,
-        tags,
+        tags: Some(tags),
     };
     
     bincode::serialize_into(writer, &data)?;
