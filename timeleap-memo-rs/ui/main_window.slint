@@ -24,7 +24,7 @@ struct TagData {
     label: string,
 }
 
-export component FractalTimeline inherits Rectangle {
+component FractalTimeline inherits Rectangle {
     // 1. 各レイヤーの設定
     in property <float> timeline-max: 3600.0;
     in property <float> middle-window-size: 600.0;
@@ -597,11 +597,90 @@ export component MainWindow inherits Window {
                 vertical-alignment: center;
             }
 
+            // Control Buttons
+            HorizontalLayout {
+                spacing: 15px;
+                
+                // Chaos Pad Toggle
+                Rectangle {
+                    width: 70px;
+                    height: 40px;
+                    background: State.chaos-pad-mode ? #9c27b0 : #f3e5f5;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #9c27b0;
+                    Text {
+                        text: "MULTI";
+                        color: State.chaos-pad-mode ? white : #9c27b0;
+                        font-weight: 700;
+                        font-size: 14px;
+                    }
+                    TouchArea {
+                        clicked => {
+                            State.chaos-pad-mode = !State.chaos-pad-mode;
+                            if (State.chaos-pad-mode) {
+                                root.enter-chaos-pad();
+                            } else {
+                                root.exit-chaos-pad();
+                            }
+                        }
+                    }
+                }
+
+                // Jump Prev Tag
+                Rectangle {
+                    width: 50px;
+                    height: 40px;
+                    background: #e0f7fa;
+                    border-radius: 6px;
+                    Text {
+                        text: "◀ T";
+                        color: #00838f;
+                        font-weight: 700;
+                    }
+                    TouchArea {
+                        clicked => { root.jump-tag(-1); }
+                    }
+                }
+
+                // Add Tag
+                Rectangle {
+                    width: 50px;
+                    height: 40px;
+                    background: #e0f2f1;
+                    border-radius: 6px;
+                    Text {
+                        text: "T +";
+                        color: #00695c;
+                        font-weight: 700;
+                    }
+                    TouchArea {
+                        clicked => { root.add-tag(); }
+                    }
+                }
+
+                // Jump Next Tag
+                Rectangle {
+                    width: 50px;
+                    height: 40px;
+                    background: #e0f7fa;
+                    border-radius: 6px;
+                    Text {
+                        text: "T ▶";
+                        color: #00838f;
+                        font-weight: 700;
+                    }
+                    TouchArea {
+                        clicked => { root.jump-tag(1); }
+                    }
+                }
+            }
+
             Rectangle {
                 width: 70px;
-                height: 30px;
+                height: 40px;
                 background: State.eraser ? #fb8c00 : #2196f3;
-                border-radius: 4px;
+                border-radius: 6px;
                 Text {
                     text: State.eraser ? "ERASER" : "PEN";
                     color: white;
@@ -616,13 +695,14 @@ export component MainWindow inherits Window {
             }
 
             Rectangle {
-                width: 60px;
-                height: 30px;
+                width: 70px;
+                height: 40px;
                 background: State.playing ? #d40000 : #00d478;
-                border-radius: 4px;
+                border-radius: 6px;
                 Text {
                     text: State.playing ? "PAUSE" : "PLAY";
                     color: white;
+                    font-weight: 700;
                 }
 
                 TouchArea {
@@ -633,13 +713,14 @@ export component MainWindow inherits Window {
             }
 
             Rectangle {
-                width: 50px;
-                height: 30px;
+                width: 60px;
+                height: 40px;
                 background: #0078d4;
-                border-radius: 4px;
+                border-radius: 6px;
                 Text {
                     text: "NOW";
                     color: white;
+                    font-weight: 700;
                 }
 
                 TouchArea {
@@ -650,15 +731,18 @@ export component MainWindow inherits Window {
             }
 
             // Tag Search
-                HorizontalLayout {
-                spacing: 5px;
+            HorizontalLayout {
+                spacing: 8px;
                 Text {
                     text: "Search Tags:";
                     vertical-alignment: center;
+                    font-size: 12px;
+                    color: #666;
                 }
 
                 LineEdit {
                     width: 150px;
+                    height: 35px;
                     placeholder-text: "Filter...";
                     text <=> State.tag-search-query;
                     accepted => {
