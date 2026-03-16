@@ -9,20 +9,49 @@ use slint::{Color, SharedString, VecModel};
 use storage::AppSettings;
 use std::cell::RefCell;
 use std::rc::Rc;
+use chrono::Local;
 
-fn stroke_to_svg(stroke: &Stroke, width: f32, height: f32) -> SharedString {
+fn stroke_to_svg(stroke: &mut Stroke, width: f32, height: f32) -> SharedString {
+    // Check if cache is valid for current resolution
+    if let Some(ref path) = stroke.cached_path {
+        if (stroke.last_render_res.0 - width).abs() < 0.1 && (stroke.last_render_res.1 - height).abs() < 0.1 {
+            return path.clone();
+        }
+    }
+
     if stroke.points.is_empty() {
         return SharedString::from("");
     }
-    let mut path = format!(
-        "M {} {}",
-        stroke.points[0].x * width,
-        stroke.points[0].y * height
-    );
-    for p in &stroke.points[1..] {
-        path.push_str(&format!(" L {} {}", p.x * width, p.y * height));
+
+    if stroke.points.len() == 1 {
+        let p = &stroke.points[0];
+        let path = format!("M {} {} L {} {}", p.x * width, p.y * height, p.x * width + 0.1, p.y * height);
+        let ss = SharedString::from(path);
+        stroke.cached_path = Some(ss.clone());
+        stroke.last_render_res = (width, height);
+        return ss;
     }
-    SharedString::from(path)
+
+    // Quadratic Bezier approximation (midpoint trick for smoothing)
+    let mut path = format!("M {} {}", stroke.points[0].x * width, stroke.points[0].y * height);
+    
+    for i in 1..stroke.points.len() - 1 {
+        let p1 = &stroke.points[i];
+        let p2 = &stroke.points[i + 1];
+        let mid_x = (p1.x + p2.x) * 0.5 * width;
+        let mid_y = (p1.y + p2.y) * 0.5 * height;
+        path.push_str(&format!(" Q {} {}, {} {}", p1.x * width, p1.y * height, mid_x, mid_y));
+    }
+
+    // Final line to the last point
+    if let Some(last) = stroke.points.last() {
+        path.push_str(&format!(" L {} {}", last.x * width, last.y * height));
+    }
+
+    let ss = SharedString::from(path);
+    stroke.cached_path = Some(ss.clone());
+    stroke.last_render_res = (width, height);
+    ss
 }
 
 fn update_ui_segments(
@@ -101,11 +130,13 @@ fn update_ui_segments(
     ui.set_timeline_segments(segments_model.into());
 }
 
-fn update_ui_tags(ui: &MainWindow, tags: &[ImpressionTag]) {
-    let ui_tags: Vec<TagData> = tags.iter().map(|t| TagData {
-        vt: t.virtual_time,
-        label: slint::SharedString::from(&t.label),
-    }).collect();
+fn update_ui_tags(ui: &MainWindow, tags: &[ImpressionTag], query: &str) {
+    let ui_tags: Vec<TagData> = tags.iter()
+        .filter(|t| query.is_empty() || t.label.to_lowercase().contains(&query.to_lowercase()))
+        .map(|t| TagData {
+            vt: t.virtual_time,
+            label: slint::SharedString::from(&t.label),
+        }).collect();
     let tags_model = std::rc::Rc::new(slint::VecModel::from(ui_tags));
     State::get(ui).set_tags(tags_model.into());
 }
@@ -159,7 +190,7 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // Initial UI update for tags
-    update_ui_tags(&ui, &tags.borrow());
+    update_ui_tags(&ui, &tags.borrow(), "");
 
     let ui_handle = ui.as_weak();
 
@@ -319,20 +350,67 @@ fn main() -> Result<(), slint::PlatformError> {
 
     ui.on_add_tag({
         let ui_handle = ui.as_weak();
+        move || {
+            if let Some(ui) = ui_handle.upgrade() {
+                let now = Local::now();
+                let default_name = now.format("%Y/%m/%d_%H:%M:%S").to_string();
+                
+                let state = State::get(&ui);
+                state.set_tag_name_input(slint::SharedString::from(default_name));
+                state.set_show_tag_editor(true);
+            }
+        }
+    });
+
+    ui.on_confirm_tag_rename({
+        let ui_handle = ui.as_weak();
         let tags = tags.clone();
         let virtual_time = virtual_time.clone();
         let strokes = strokes.clone();
-        move || {
+        move |new_name| {
             if let Some(ui) = ui_handle.upgrade() {
                 let vt = virtual_time.borrow().get_current();
                 let mut tag_list = tags.borrow_mut();
-                let label = format!("Tag {}", tag_list.len() + 1);
-                tag_list.push(ImpressionTag::new(vt, label));
-                update_ui_tags(&ui, &tag_list);
+                tag_list.push(ImpressionTag::new(vt, new_name.to_string()));
+                
+                let state = State::get(&ui);
+                let query = state.get_tag_search_query();
+                update_ui_tags(&ui, &tag_list, &query);
 
                 // Auto-save when tag is added
                 let data = strokes.borrow().clone();
                 let _ = storage::save_to_binary("data.bin", &data, &tag_list, vt);
+            }
+        }
+    });
+
+    ui.on_jump_tag({
+        let ui_handle = ui.as_weak();
+        let tags = tags.clone();
+        let virtual_time = virtual_time.clone();
+        move |dir| {
+            if let Some(ui) = ui_handle.upgrade() {
+                let current_vt = virtual_time.borrow().get_current();
+                let tag_list = tags.borrow();
+                
+                let target_vt = if dir > 0 {
+                    // Find next (larger VT)
+                    tag_list.iter()
+                        .filter(|t| t.virtual_time > current_vt + 0.01)
+                        .map(|t| t.virtual_time)
+                        .min_by(|a, b| a.partial_cmp(b).unwrap())
+                } else {
+                    // Find previous (smaller VT)
+                    tag_list.iter()
+                        .filter(|t| t.virtual_time < current_vt - 0.01)
+                        .map(|t| t.virtual_time)
+                        .max_by(|a, b| a.partial_cmp(b).unwrap())
+                };
+                
+                if let Some(vt) = target_vt {
+                    virtual_time.borrow_mut().set_current(vt);
+                    State::get(&ui).set_vt(vt);
+                }
             }
         }
     });
@@ -422,6 +500,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Update Timer (approx 60fps)
     let timer = slint::Timer::default();
+    let mut last_tick = std::time::Instant::now();
     timer.start(
         slint::TimerMode::Repeated,
         std::time::Duration::from_millis(16),
@@ -433,15 +512,32 @@ fn main() -> Result<(), slint::PlatformError> {
             let highlighted_strokes = highlighted_strokes.clone();
             let world_line_manager = world_line_manager.clone();
             let active_segment_id = active_segment_id.clone();
+            let tags = tags.clone();
             let mut waveform_update_counter = 0;
+            let mut last_search_query = String::new();
 
             move || {
+                let now = std::time::Instant::now();
+                let mut dt = now.duration_since(last_tick).as_secs_f32();
+                last_tick = now;
+
+                // Safety cap to prevent huge jumps during system freezes or debugging
+                if dt > 0.1 { dt = 0.1; }
+
                 if let Some(ui) = ui_handle.upgrade() {
+                    let is_recording = current_stroke.borrow().is_some();
                     let mut vt = virtual_time.borrow_mut();
-                    vt.advance(0.016);
+                    vt.advance(dt, is_recording);
                     let current_vt = vt.get_current();
 
                     let state = State::get(&ui);
+                    
+                    let query = state.get_tag_search_query();
+                    if query != last_search_query {
+                        last_search_query = query.to_string();
+                        update_ui_tags(&ui, &tags.borrow(), &last_search_query);
+                    }
+
                     state.set_vt(current_vt);
                     state.set_vt_max(vt.get_max());
                     state.set_playing(vt.is_playing());
@@ -453,47 +549,50 @@ fn main() -> Result<(), slint::PlatformError> {
                     let highlighted = highlighted_strokes.borrow();
                     let is_chaos_mode = state.get_chaos_pad_mode();
 
-                    for (idx, stroke) in strokes.borrow().iter().enumerate() {
-                        // 消去された時間より後であれば表示しない
-                        if let Some(ea) = stroke.erased_at {
-                            if current_vt >= ea { continue; }
-                        }
-                        
-                        let dt = current_vt - stroke.virtual_time_created;
-                        let mut r = stroke.color[0];
-                        let mut g = stroke.color[1];
-                        let mut b = stroke.color[2];
-                        let mut opacity = 0.0;
-
-                        if dt >= 0.0 {
-                            // 過去〜現在：通常のフェードアウト表示
-                            opacity = stroke.get_alpha(current_vt, lambda);
-                            if is_chaos_mode {
-                                if highlighted.contains(&idx) {
-                                    r = 1.0; g = 0.0; b = 1.0;
-                                } else {
-                                    r = 0.8; g = 0.8; b = 0.8;
-                                }
+                    {
+                        let mut strokes_borrow = strokes.borrow_mut();
+                        for (idx, stroke) in strokes_borrow.iter_mut().enumerate() {
+                            // 消去された時間より後であれば表示しない
+                            if let Some(ea) = stroke.erased_at {
+                                if current_vt >= ea { continue; }
                             }
-                        } else if !is_chaos_mode && dt >= -7.5 {
-                            // 未来：オニオンスキン（緑色でフェードイン）
-                            r = 0.0; g = 1.0; b = 0.0;
-                            // 近づくにつれて不透明度を上げる (fade-in)
-                            opacity = 1.0 - (dt.abs() / 7.5);
-                            opacity *= 0.6; // オニオンスキン自体の最大透明度を少し抑える
-                        }
+                            
+                            let dt = current_vt - stroke.virtual_time_created;
+                            let mut r = stroke.color[0];
+                            let mut g = stroke.color[1];
+                            let mut b = stroke.color[2];
+                            let mut opacity = 0.0;
 
-                        if opacity > 0.01 {
-                            render_data.push(StrokeData {
-                                color: Color::from_rgb_f32(r, g, b),
-                                path_data: stroke_to_svg(stroke, canvas_w, canvas_h),
-                                width: stroke.width,
-                                opacity,
-                            });
+                            if dt >= 0.0 {
+                                // 過去〜現在：通常のフェードアウト表示
+                                opacity = stroke.get_alpha(current_vt, lambda);
+                                if is_chaos_mode {
+                                    if highlighted.contains(&idx) {
+                                        r = 1.0; g = 0.0; b = 1.0;
+                                    } else {
+                                        r = 0.8; g = 0.8; b = 0.8;
+                                    }
+                                }
+                            } else if !is_chaos_mode && dt >= -7.5 {
+                                // 未来：オニオンスキン（緑色でフェードイン）
+                                r = 0.0; g = 1.0; b = 0.0;
+                                // 近づくにつれて不透明度を上げる (fade-in)
+                                opacity = 1.0 - (dt.abs() / 7.5);
+                                opacity *= 0.6; // オニオンスキン自体の最大透明度を少し抑える
+                            }
+
+                            if opacity > 0.01 {
+                                render_data.push(StrokeData {
+                                    color: Color::from_rgb_f32(r, g, b),
+                                    path_data: stroke_to_svg(stroke, canvas_w, canvas_h),
+                                    width: stroke.width,
+                                    opacity,
+                                });
+                            }
                         }
                     }
 
-                    if let Some(ref stroke) = *current_stroke.borrow() {
+                    if let Some(ref mut stroke) = *current_stroke.borrow_mut() {
                         render_data.push(StrokeData {
                             color: Color::from_rgb_f32(stroke.color[0], stroke.color[1], stroke.color[2]),
                             path_data: stroke_to_svg(stroke, canvas_w, canvas_h),

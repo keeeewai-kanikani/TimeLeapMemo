@@ -1,3 +1,5 @@
+import { Button, LineEdit } from "std-widgets.slint";
+
 struct Point {
     x: float,
     y: float,
@@ -26,7 +28,7 @@ export component FractalTimeline inherits Rectangle {
     // 1. 各レイヤーの設定
     in property <float> timeline-max: 3600.0;
     in property <float> middle-window-size: 600.0;
-    in property <float> micro-window-size: 120.0;
+    in property <float> micro-window-size: 60.0;
     in property <float> current-vt: 0.0;
 
     // 2. 外部から提供される比率と座標
@@ -162,15 +164,24 @@ export component FractalTimeline inherits Rectangle {
             color: #666;
         }
 
-        for tag in State.tags: Rectangle {
+        for tag[i] in State.tags: Rectangle {
             property <float> rel-x: (tag.vt - root.micro-start) / root.micro-window-size;
             visible: rel-x >= 0.0 && rel-x <= 1.0;
             x: (rel-x * parent.width / 1px) * 1px - 4px;
             y: 4px;
-            width: 8px; height: 12px;
+            width: 8px;
+            height: 12px;
             background: #00bcd4;
             border-radius: 2px;
-            border-width: 1px; border-color: white;
+            border-width: 1px;
+            border-color: white;
+
+            Text {
+                text: tag.label;
+                y: 12px + Math.mod(i, 3) * 12px;
+                font-size: 10px;
+                color: #007c91;
+            }
         }
     }
 
@@ -219,17 +230,25 @@ export component FractalTimeline inherits Rectangle {
             color: #666;
         }
 
-        for tag in State.tags: Rectangle {
+        for tag[i] in State.tags: Rectangle {
             property <float> m-center: root.macro-ratio * root.effective-max;
             property <float> m-start: Math.max(0.0, m-center - root.middle-window-size / 2.0);
             property <float> rel-x: (tag.vt - m-start) / root.middle-window-size;
             visible: rel-x >= 0.0 && rel-x <= 1.0;
             x: (rel-x * parent.width / 1px) * 1px - 3px;
             y: 5px;
-            width: 6px; height: 10px;
+            width: 6px;
+            height: 10px;
             background: #00bcd4;
             opacity: 0.8;
             border-radius: 1px;
+
+            Text {
+                text: tag.label;
+                y: 10px + Math.mod(i, 3) * 12px;
+                font-size: 10px;
+                color: #1976d2;
+            }
         }
     }
 
@@ -278,13 +297,21 @@ export component FractalTimeline inherits Rectangle {
             color: #666;
         }
 
-        for tag in State.tags: Rectangle {
+        for tag[i] in State.tags: Rectangle {
             property <float> rel-x: tag.vt / root.effective-max;
             x: (rel-x * parent.width / 1px) * 1px - 2px;
             y: 6px;
-            width: 4px; height: 8px;
+            width: 4px;
+            height: 8px;
             background: #00bcd4;
             opacity: 0.6;
+
+            Text {
+                text: tag.label;
+                y: 8px;
+                font-size: 9px;
+                color: #0288d1;
+            }
         }
     }
 }
@@ -301,6 +328,10 @@ export global State {
     in-out property <float> middle-ratio: 0.0;
     in-out property <bool> fullscreen: false;
     in-out property <[TagData]> tags: [];
+
+    in-out property <string> tag-search-query: "";
+    in-out property <bool> show-tag-editor: false;
+    in-out property <string> tag-name-input: "";
 }
 
 export component MainWindow inherits Window {
@@ -321,7 +352,7 @@ export component MainWindow inherits Window {
     // ==========================================
     in property <float> timeline-max: 3600.0;
     in property <float> middle-scale: 600.0;
-    in property <float> micro-scale: 120.0;
+    in property <float> micro-scale: 60.0;
 
     // ==========================================
     // 窓の開始位置計算（全階層の連動の核）
@@ -368,6 +399,18 @@ export component MainWindow inherits Window {
                 State.fullscreen = !State.fullscreen;
                 return accept;
             }
+            if (event.text == "5") {
+                root.add-tag();
+                return accept;
+            }
+            if (event.text == "4" || event.text == Key.LeftArrow) {
+                root.jump-tag(-1);
+                return accept;
+            }
+            if (event.text == "6" || event.text == Key.RightArrow) {
+                root.jump-tag(1);
+                return accept;
+            }
             return reject;
         }
         key-released(event) => {
@@ -392,6 +435,8 @@ export component MainWindow inherits Window {
     callback scrub(float);
     callback enter-chaos-pad();
     callback exit-chaos-pad();
+    callback jump-tag(int); // -1: left, 1: right
+    callback confirm-tag-rename(string);
     callback time-changed(float);
     callback segment-selected(int);
     callback worldline-changed(float);
@@ -597,17 +642,81 @@ export component MainWindow inherits Window {
                 }
             }
 
-            Rectangle {
-                width: 100px;
-                height: 30px;
-                background: State.chaos-pad-mode ? #ff6b00 : #cccccc;
-                border-radius: 4px;
+            // Tag Search
+                HorizontalLayout {
+                spacing: 5px;
                 Text {
-                    text: State.chaos-pad-mode ? "パッド ON" : "Space: パッド";
-                    color: white;
-                    font-size: 11px;
-                    font-weight: 700;
+                    text: "Search Tags:";
+                    vertical-alignment: center;
                 }
+
+                LineEdit {
+                    width: 150px;
+                    placeholder-text: "Filter...";
+                    text <=> State.tag-search-query;
+                    accepted => {
+                        key-handler.focus();
+                    }
+                }
+            }
+        }
+    }
+
+    if State.show-tag-editor: Rectangle {
+        background: #00000040;
+        TouchArea { } // Block clicks behind
+        Rectangle {
+            width: 300px;
+            height: 120px;
+            background: #ffffff;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #ddd;
+            drop-shadow-blur: 10px;
+            drop-shadow-color: #00000020;
+            VerticalLayout {
+                padding: 15px;
+                spacing: 10px;
+                Text {
+                    text: "New Tag Name";
+                    font-weight: 700;
+                    color: #333;
+                }
+
+                input := LineEdit {
+                    text <=> State.tag-name-input;
+                    accepted => {
+                        root.confirm-tag-rename(self.text);
+                        State.show-tag-editor = false;
+                        key-handler.focus();
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 10px;
+                    Button {
+                        text: "Cancel";
+                        clicked => {
+                            State.show-tag-editor = false;
+                            key-handler.focus();
+                        }
+                    }
+
+                    Button {
+                        text: "OK";
+                        primary: true;
+                        clicked => {
+                            root.confirm-tag-rename(input.text);
+                            State.show-tag-editor = false;
+                            key-handler.focus();
+                        }
+                    }
+                }
+            }
+
+            init => {
+                input.focus();
             }
         }
     }

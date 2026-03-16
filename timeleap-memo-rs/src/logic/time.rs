@@ -13,11 +13,16 @@ impl VirtualTime {
         }
     }
 
-    pub fn advance(&mut self, dt: f32) {
+    pub fn advance(&mut self, dt: f32, is_recording: bool) {
         if self.is_playing {
             self.current += dt;
             if self.current > self.max {
-                self.max = self.current;
+                if is_recording {
+                    self.max = self.current;
+                } else {
+                    self.current = self.max;
+                    self.is_playing = false;
+                }
             }
         }
     }

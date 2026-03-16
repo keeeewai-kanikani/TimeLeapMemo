@@ -7,6 +7,9 @@ pub struct Point {
     pub pressure: f32,
 }
 
+const MAX_POINTS_PER_STROKE: usize = 2000;
+const MIN_DIST_SQ: f32 = 0.000004; // 0.002 * 0.002 (normalized coordinates)
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stroke {
     pub points: Vec<Point>,
@@ -15,6 +18,12 @@ pub struct Stroke {
     pub virtual_time_created: f32,
     pub erased_at: Option<f32>,
     pub segment_id: usize, // 世界線（セグメント）ID
+
+    // --- UI/Transient state ---
+    #[serde(skip)]
+    pub cached_path: Option<slint::SharedString>,
+    #[serde(skip)]
+    pub last_render_res: (f32, f32),
 }
 
 impl Stroke {
@@ -26,11 +35,30 @@ impl Stroke {
             virtual_time_created: virtual_time,
             erased_at: None,
             segment_id: 0,
+            cached_path: None,
+            last_render_res: (0.0, 0.0),
         }
     }
 
     pub fn add_point(&mut self, x: f32, y: f32, pressure: f32) {
+        if self.points.len() >= MAX_POINTS_PER_STROKE {
+            return;
+        }
+
+        // Distance-based decimation (iOS-style simplification)
+        if let Some(last) = self.points.last() {
+            let dx = x - last.x;
+            let dy = y - last.y;
+            let dist_sq = dx * dx + dy * dy;
+            if dist_sq < MIN_DIST_SQ {
+                return;
+            }
+        }
+
         self.points.push(Point { x, y, pressure });
+        
+        // Invalidate cache
+        self.cached_path = None;
     }
 
     #[allow(dead_code)]
